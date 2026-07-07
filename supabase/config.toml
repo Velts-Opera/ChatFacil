@@ -1,0 +1,21 @@
+project_id = "ncosftsthrzznevzkvbi"
+
+[functions.whatsapp-webhook]
+verify_jwt = false
+
+[functions.whatsapp-test-connection]
+verify_jwt = true
+
+[functions.whatsapp-send-message]
+verify_jwt = true
+[functions.whatsapp-sync-templates]
+verify_jwt = true
+
+[functions.whatsapp-send-template]
+verify_jwt = true
+
+[functions.whatsapp-disconnect-channel]
+verify_jwt = true
+
+[functions.whatsapp-health-check]
+verify_jwt = true
