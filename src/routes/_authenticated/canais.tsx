@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,9 +13,12 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  ArrowLeft, Bot, CheckCircle2, Copy, Globe, Instagram, KeyRound, Loader2,
-  MessageCircle, MessagesSquare, Plus, Radio, RefreshCw, Send, ShieldCheck,
-  Trash2, TriangleAlert, Workflow, Zap,
+  Collapsible, CollapsibleContent, CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  ArrowLeft, Bot, CheckCircle2, ChevronDown, Copy, Globe, Instagram, KeyRound,
+  Loader2, MessageCircle, MessagesSquare, Plus, Radio, RefreshCw, Send,
+  ShieldCheck, Trash2, TriangleAlert, Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -252,11 +255,11 @@ function WhatsAppPanel({ channel, loading, onBack, onChanged }: {
   }, [channel?.id]);
 
   const status = channel?.status ?? "disconnected";
-  const readyToTest = name && phoneNumberId && wabaId && verifyToken && (accessToken || channel?.status === "connected");
+  const readyToTest = Boolean(phoneNumberId.trim() && wabaId.trim() && (accessToken.trim() || channel));
 
   async function handleTest() {
     if (!readyToTest) {
-      toast.error(channel?.status === "connected" ? "Preencha os dados obrigatórios." : "Preencha todos os dados, incluindo Access Token.");
+      toast.error(channel ? "Preencha Phone Number ID e WABA ID." : "Preencha Access Token, Phone Number ID e WABA ID.");
       return;
     }
     setTesting(true);
@@ -264,7 +267,7 @@ function WhatsAppPanel({ channel, loading, onBack, onChanged }: {
       const { data, error } = await supabase.functions.invoke("whatsapp-test-connection", {
         body: {
           channel_id: channel?.id,
-          name,
+          name: name.trim() || "WhatsApp principal",
           access_token: accessToken || undefined,
           app_secret: appSecret || undefined,
           phone_number_id: phoneNumberId,
@@ -329,7 +332,7 @@ function WhatsAppPanel({ channel, loading, onBack, onChanged }: {
         <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="mr-1 h-4 w-4" />Voltar</Button>
         <div className="flex-1">
           <h1 className="text-2xl font-semibold tracking-tight">Conectar WhatsApp</h1>
-          <p className="text-sm text-muted-foreground">Cloud API oficial: Phone Number ID, WABA ID, Access Token e webhook. Nada de QR Code ou n8n.</p>
+          <p className="text-sm text-muted-foreground">Cloud API oficial da Meta. Cole 3 informações e conecte — sem QR Code.</p>
         </div>
         <StatusBadge status={status} />
       </div>
@@ -346,37 +349,51 @@ function WhatsAppPanel({ channel, loading, onBack, onChanged }: {
 
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <section className="rounded-xl border bg-card p-5 shadow-sm">
-          <div className="mb-4 flex items-center gap-2">
+          <div className="mb-1 flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-primary" />
-            <h2 className="font-medium">Credenciais oficiais da Meta</h2>
+            <h2 className="font-medium">Conecte com 3 informações</h2>
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Nome do canal"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Atendimento principal" /></Field>
-            <Field label="Phone Number ID"><Input value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} placeholder="123456789012345" /></Field>
-            <Field label="WhatsApp Business Account ID"><Input value={wabaId} onChange={(e) => setWabaId(e.target.value)} placeholder="123456789012345" /></Field>
-            <Field label="Verify Token do Webhook"><Input value={verifyToken} onChange={(e) => setVerifyToken(e.target.value)} placeholder="Segredo forte que você define" /></Field>
-            <Field label={channel?.status === "connected" ? "Access Token novo (opcional para trocar)" : "Access Token da Meta"}>
+          <p className="mb-4 text-xs text-muted-foreground">
+            Copie do painel Meta Developers e cole aqui. Nome do canal, Verify Token e webhook são gerados automaticamente.
+          </p>
+          <div className="grid gap-3">
+            <Field label={channel?.status === "connected" ? "1. Access Token (já salvo — cole um novo só para trocar)" : "1. Access Token da Meta"}>
               <Input value={accessToken} onChange={(e) => setAccessToken(e.target.value)} placeholder="EAA..." type="password" autoComplete="off" />
             </Field>
-            <Field label={channel?.app_secret_present ? "App Secret novo (opcional para trocar)" : "App Secret do app Meta (recomendado)"}>
-              <Input value={appSecret} onChange={(e) => setAppSecret(e.target.value)} placeholder="Usado para validar assinatura do webhook" type="password" autoComplete="off" />
-            </Field>
+            <div className="grid gap-3 md:grid-cols-2">
+              <Field label="2. Phone Number ID"><Input value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} placeholder="123456789012345" /></Field>
+              <Field label="3. WhatsApp Business Account ID (WABA ID)"><Input value={wabaId} onChange={(e) => setWabaId(e.target.value)} placeholder="123456789012345" /></Field>
+            </div>
           </div>
 
+          <Collapsible className="mt-4">
+            <CollapsibleTrigger className="flex w-full items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
+              <ChevronDown className="h-3.5 w-3.5" />
+              Opções avançadas (nome do canal, Verify Token e App Secret)
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <Field label="Nome do canal (opcional)"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="WhatsApp principal" /></Field>
+                <Field label="Verify Token do Webhook (gerado automaticamente)"><Input value={verifyToken} onChange={(e) => setVerifyToken(e.target.value)} placeholder="Segredo forte que você define" /></Field>
+                <Field label={channel?.app_secret_present ? "App Secret novo (opcional para trocar)" : "App Secret do app Meta (recomendado)"}>
+                  <Input value={appSecret} onChange={(e) => setAppSecret(e.target.value)} placeholder="Usado para validar assinatura do webhook" type="password" autoComplete="off" />
+                </Field>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+
           <div className="mt-5 rounded-lg border bg-muted/30 p-3">
-            <div className="mb-2 flex items-center gap-2 text-sm font-medium"><KeyRound className="h-4 w-4" />Checklist na Meta</div>
+            <div className="mb-2 flex items-center gap-2 text-sm font-medium"><KeyRound className="h-4 w-4" />Depois de conectar, no Meta Developers</div>
             <ol className="space-y-1 text-xs text-muted-foreground">
-              <li>1. Configure o Webhook Callback URL abaixo no Meta Developers.</li>
-              <li>2. Use exatamente o mesmo Verify Token salvo aqui.</li>
-              <li>3. Assine o campo <span className="font-mono">messages</span>.</li>
-              <li>4. Teste conexão. Só vira “Conectado” se a Meta responder com sucesso.</li>
+              <li>1. Cole a Callback URL e o Verify Token ao lado (botão copiar).</li>
+              <li>2. Assine o campo <span className="font-mono">messages</span>. Pronto.</li>
             </ol>
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
             <Button onClick={handleTest} disabled={testing || !readyToTest}>
               {testing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-              {channel ? "Salvar e testar API real" : "Conectar e testar API real"}
+              {channel ? "Salvar e testar conexão" : "Conectar WhatsApp"}
             </Button>
             {channel && (
               <>
@@ -761,7 +778,7 @@ function TemplatesManager({ channel }: { channel: Channel }) {
             <Field label="Telefone destino (DDI + DDD + número)"><Input value={to} onChange={(e) => setTo(e.target.value)} placeholder="5522999999999" /></Field>
             <Field label="Nome do template"><Input value={templateName} onChange={(e) => setTemplateName(e.target.value)} placeholder="nome_aprovado_na_meta" /></Field>
             <Field label="Idioma"><Input value={templateLanguage} onChange={(e) => setTemplateLanguage(e.target.value)} placeholder="pt_BR" /></Field>
-            <Field label="Parâmetros do corpo, um por linha"><Textarea value={params} onChange={(e) => setParams(e.target.value)} rows={4} placeholder="João\nPedido 123\nR$ 97,00" /></Field>
+            <Field label="Parâmetros do corpo, um por linha"><Textarea value={params} onChange={(e) => setParams(e.target.value)} rows={4} placeholder={"João\nPedido 123\nR$ 97,00"} /></Field>
           </div>
           <DialogFooter><Button variant="ghost" onClick={() => setSendOpen(false)}>Cancelar</Button><Button onClick={sendTemplate} disabled={sending}>{sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Enviar</Button></DialogFooter>
         </DialogContent>

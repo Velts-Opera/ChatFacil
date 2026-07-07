@@ -163,6 +163,12 @@
     border-color: var(--color-border);
   }
 
+  html {
+    scroll-behavior: smooth;
+    /* Keep anchored sections visible below the sticky landing header. */
+    scroll-padding-top: 4.5rem;
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);

@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Search, Send, Zap, UserCheck, CheckCircle2, ArrowLeft, Bot, Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -74,6 +75,18 @@ function InboxPage() {
   });
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
+
+  const { data: quickReplies = [] } = useQuery({
+    queryKey: ["quick_replies"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("quick_replies")
+        .select("id, title, message, category")
+        .order("category");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
 
   const { data: messages = [], isLoading: loadingMessages } = useQuery({
     queryKey: ["messages", selectedId],
@@ -144,6 +157,17 @@ function InboxPage() {
   }
 
   const selectedPhone = selected?.contacts?.wa_id || selected?.contacts?.phone || "—";
+
+  async function saveNotes(notes: string) {
+    const contactId = selected?.contacts?.id;
+    if (!contactId || notes === (selected?.contacts?.notes ?? "")) return;
+    const { error } = await supabase.from("contacts").update({ notes }).eq("id", contactId);
+    if (error) toast.error(error.message);
+    else {
+      toast.success("Observações salvas.");
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+    }
+  }
 
   return (
     <div className="grid h-[calc(100vh-3.25rem)] grid-cols-1 md:h-screen md:grid-cols-[320px_1fr_300px]">
@@ -234,7 +258,29 @@ function InboxPage() {
               <div className="flex items-end gap-2">
                 <Textarea value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Escreva sua resposta…" rows={2} className="resize-none" onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendReply(); }} />
                 <div className="flex flex-col gap-2">
-                  <Button size="icon" variant="outline" title="Resposta rápida"><Zap className="h-4 w-4" /></Button>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button size="icon" variant="outline" title="Resposta rápida"><Zap className="h-4 w-4" /></Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="max-h-72 w-80 overflow-y-auto p-2">
+                      {quickReplies.length === 0 ? (
+                        <div className="p-3 text-center text-xs text-muted-foreground">
+                          Nenhuma resposta rápida cadastrada. Crie em “Respostas rápidas”.
+                        </div>
+                      ) : (
+                        quickReplies.map((r: any) => (
+                          <button
+                            key={r.id}
+                            onClick={() => setReply((prev) => (prev ? `${prev} ${r.message}` : r.message))}
+                            className="block w-full rounded-md px-2 py-1.5 text-left hover:bg-muted"
+                          >
+                            <div className="text-xs font-medium">{r.title}</div>
+                            <div className="line-clamp-2 text-[11px] text-muted-foreground">{r.message}</div>
+                          </button>
+                        ))
+                      )}
+                    </PopoverContent>
+                  </Popover>
                   <Button size="icon" title="Enviar" onClick={sendReply} disabled={sending || !reply.trim()}>{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</Button>
                 </div>
               </div>
@@ -267,7 +313,14 @@ function InboxPage() {
             <InfoBlock label="Última mensagem" value={selected.last_message ?? "—"} />
             <div>
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Observações</div>
-              <Textarea placeholder="Anotações internas…" rows={4} className="mt-2" defaultValue={selected.contacts?.notes ?? ""} />
+              <Textarea
+                key={selected.contacts?.id ?? selected.id}
+                placeholder="Anotações internas…"
+                rows={4}
+                className="mt-2"
+                defaultValue={selected.contacts?.notes ?? ""}
+                onBlur={(e) => saveNotes(e.target.value)}
+              />
             </div>
           </div>
         ) : (

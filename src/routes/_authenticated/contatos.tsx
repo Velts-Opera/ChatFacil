@@ -56,7 +56,7 @@ function ContactsPage() {
       const { error } = await supabase.from("contacts").insert({
         company_id: profile.company_id,
         name: form.name,
-        phone: form.phone,
+        phone: form.phone || null,
         email: form.email || null,
         source: form.source || null,
       });

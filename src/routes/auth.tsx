@@ -124,7 +124,7 @@ function LoginForm() {
       </button>
       <div className="relative py-2">
         <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border" /></div>
-        <div className="relative flex justify-center"><span className="bg-background px-2 text-xs text-muted-foreground">ou</span></div>
+        <div className="relative flex justify-center"><span className="bg-surface px-2 text-xs text-muted-foreground">ou</span></div>
       </div>
       <Button type="button" variant="outline" className="w-full" onClick={onGoogle}>
         Continuar com Google
@@ -155,7 +155,7 @@ function SignupForm() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email: form.email,
       password: form.password,
       options: {
@@ -173,7 +173,11 @@ function SignupForm() {
     });
     setLoading(false);
     if (error) return toast.error(error.message);
-    toast.success("Conta criada! Verifique seu e-mail se necessário.");
+    if (!data.session) {
+      toast.success("Conta criada! Confirme seu e-mail para entrar.");
+      return;
+    }
+    toast.success("Conta criada! Bem-vindo.");
     navigate({ to: "/dashboard" });
   }
 
@@ -230,7 +234,7 @@ function SignupForm() {
       </Button>
       <div className="relative py-2">
         <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border" /></div>
-        <div className="relative flex justify-center"><span className="bg-background px-2 text-xs text-muted-foreground">ou</span></div>
+        <div className="relative flex justify-center"><span className="bg-surface px-2 text-xs text-muted-foreground">ou</span></div>
       </div>
       <Button type="button" variant="outline" className="w-full" onClick={onGoogle}>
         Continuar com Google
