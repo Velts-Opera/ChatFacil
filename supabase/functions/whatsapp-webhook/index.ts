@@ -9,6 +9,7 @@ import {
   upsertContactAndConversation,
 } from "../_shared/whatsapp.ts";
 import { fishAudioConfigured, synthesizeSpeech } from "../_shared/fishaudio.ts";
+import { generateBiaReply } from "../_shared/ai.ts";
 
 Deno.serve(async (req) => {
   const admin = adminClient();
@@ -271,15 +272,9 @@ async function tryAutomationOrAiReply(
     return;
   }
 
-  const provider = resolveAiProvider();
-  if (!provider) {
-    await admin.from("conversations").update({ ai_handling: false, status: "pendente", handoff_reason: "Nenhuma chave de IA configurada (GEMINI_API_KEY ou OPENAI_API_KEY)" }).eq("id", conversationId);
-    return;
-  }
-
-  const reply = await generateAiReply(admin, channel, conversationId, userMessage, provider, inboundMessageId);
+  const reply = await generateBiaReply(admin, channel, conversationId, userMessage, inboundMessageId);
   if (!reply) {
-    await admin.from("conversations").update({ ai_handling: false, status: "pendente", handoff_reason: "IA não respondeu com segurança" }).eq("id", conversationId);
+    await admin.from("conversations").update({ ai_handling: false, status: "pendente", handoff_reason: "Bia não respondeu com segurança" }).eq("id", conversationId);
     return;
   }
 
@@ -323,97 +318,6 @@ async function trySendVoiceReply(admin: any, channel: any, waId: string, reply: 
     });
     return null;
   }
-}
-
-// Provedor de IA: usa Gemini quando GEMINI_API_KEY existe, senão OpenAI.
-// Ambos falam o protocolo chat/completions (Gemini via endpoint compatível com OpenAI).
-function resolveAiProvider() {
-  const geminiKey = Deno.env.get("GEMINI_API_KEY");
-  if (geminiKey) {
-    return {
-      apiKey: geminiKey,
-      url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-      model: Deno.env.get("GEMINI_MODEL") ?? "gemini-2.0-flash",
-    };
-  }
-  const openaiKey = Deno.env.get("OPENAI_API_KEY");
-  if (openaiKey) {
-    return {
-      apiKey: openaiKey,
-      url: "https://api.openai.com/v1/chat/completions",
-      model: Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini",
-    };
-  }
-  return null;
-}
-
-async function generateAiReply(admin: any, channel: any, conversationId: string, userMessage: string, provider: { apiKey: string; url: string; model: string }, inboundMessageId: string) {
-  const [{ data: company }, { data: quickReplies }, { data: knowledge }, { data: history }] = await Promise.all([
-    admin.from("companies").select("name, segment, business_hours, services_description, communication_tone").eq("id", channel.company_id).maybeSingle(),
-    admin.from("quick_replies").select("title, message, category").eq("company_id", channel.company_id).limit(20),
-    admin.from("ai_knowledge_items").select("title, content").eq("company_id", channel.company_id).eq("is_active", true).limit(30),
-    admin.from("messages").select("direction, content, created_at").eq("conversation_id", conversationId).order("created_at", { ascending: false }).limit(8),
-  ]);
-
-  const system = [
-    `Você é a atendente virtual da empresa ${company?.name ?? "do cliente"}.`,
-    "Você é uma atendente mulher: fale sempre no feminino, com simpatia e acolhimento.",
-    "Responda em português do Brasil, de forma objetiva, educada e comercial.",
-    "Use somente as informações cadastradas abaixo. Não invente preço, prazo, endereço ou política.",
-    "Se não souber responder, diga: 'Vou chamar uma pessoa da equipe para confirmar isso com você.'",
-    `Tom: ${company?.communication_tone ?? "profissional"}.`,
-    `Horário informado: ${company?.business_hours ?? channel.business_hours ?? "não cadastrado"}.`,
-    `Serviços cadastrados: ${company?.services_description ?? "não cadastrado"}.`,
-    `Mensagem de saudação: ${channel.greeting_message ?? ""}`,
-    "\nBase de conhecimento:",
-    ...(knowledge ?? []).map((k: any) => `- ${k.title}: ${k.content}`),
-    "\nRespostas rápidas:",
-    ...(quickReplies ?? []).map((q: any) => `- ${q.title}: ${q.message}`),
-  ].join("\n");
-
-  const messages = [
-    { role: "system", content: system },
-    ...((history ?? []).reverse().map((m: any) => ({ role: m.direction === "inbound" ? "user" : "assistant", content: m.content }))),
-    { role: "user", content: userMessage },
-  ];
-
-  const model = provider.model;
-  const res = await fetch(provider.url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${provider.apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, temperature: 0.2, max_tokens: 320, messages }),
-  });
-
-  const out = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    await admin.from("ai_interactions").insert({
-      company_id: channel.company_id,
-      channel_id: channel.id,
-      conversation_id: conversationId,
-      inbound_message_id: inboundMessageId,
-      status: "error",
-      model,
-      input: userMessage,
-      error_message: out?.error?.message ?? `IA HTTP ${res.status}`,
-    });
-    return null;
-  }
-
-  const reply = String(out?.choices?.[0]?.message?.content ?? "").trim();
-  await admin.from("ai_interactions").insert({
-    company_id: channel.company_id,
-    channel_id: channel.id,
-    conversation_id: conversationId,
-    inbound_message_id: inboundMessageId,
-    status: reply ? "completed" : "empty",
-    model,
-    prompt_tokens: out?.usage?.prompt_tokens ?? null,
-    completion_tokens: out?.usage?.completion_tokens ?? null,
-    input: userMessage,
-    output: reply,
-  });
-
-  return reply || null;
 }
 
 async function sendBotReply(

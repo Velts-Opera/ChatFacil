@@ -45,3 +45,13 @@ export async function synthesizeSpeech(text: string, referenceId?: string | null
   if (audio.byteLength === 0) return { ok: false, error: "Fish Audio retornou áudio vazio." };
   return { ok: true, audio, mimeType: "audio/mpeg" };
 }
+
+// Converte o áudio para base64 em blocos para não estourar o limite de argumentos.
+export function audioToBase64(bytes: Uint8Array) {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}

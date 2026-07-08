@@ -14,7 +14,9 @@ function base64ToBytes(value: string) {
 }
 
 async function deriveKey() {
-  const secret = requiredEnv("APP_ENCRYPTION_KEY");
+  // APP_ENCRYPTION_KEY quando definido; caso contrário deriva do service role key,
+  // que só existe dentro do runtime das Edge Functions deste projeto.
+  const secret = Deno.env.get("APP_ENCRYPTION_KEY") ?? `cf::${requiredEnv("SUPABASE_SERVICE_ROLE_KEY")}`;
   if (secret.length < 32) throw new Error("APP_ENCRYPTION_KEY deve ter pelo menos 32 caracteres.");
   const material = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
   return crypto.subtle.importKey("raw", material, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
