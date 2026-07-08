@@ -3,9 +3,12 @@ import { constantTimeEqual, json, sha256HmacHex, text } from "../_shared/http.ts
 import {
   extractMessageText,
   getChannelSecret,
+  sendWhatsAppAudio,
   sendWhatsAppText,
+  uploadWhatsAppMedia,
   upsertContactAndConversation,
 } from "../_shared/whatsapp.ts";
+import { fishAudioConfigured, synthesizeSpeech } from "../_shared/fishaudio.ts";
 
 Deno.serve(async (req) => {
   const admin = adminClient();
@@ -268,13 +271,13 @@ async function tryAutomationOrAiReply(
     return;
   }
 
-  const apiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!apiKey) {
-    await admin.from("conversations").update({ ai_handling: false, status: "pendente", handoff_reason: "OPENAI_API_KEY ausente" }).eq("id", conversationId);
+  const provider = resolveAiProvider();
+  if (!provider) {
+    await admin.from("conversations").update({ ai_handling: false, status: "pendente", handoff_reason: "Nenhuma chave de IA configurada (GEMINI_API_KEY ou OPENAI_API_KEY)" }).eq("id", conversationId);
     return;
   }
 
-  const reply = await generateAiReply(admin, channel, conversationId, userMessage, apiKey, inboundMessageId);
+  const reply = await generateAiReply(admin, channel, conversationId, userMessage, provider, inboundMessageId);
   if (!reply) {
     await admin.from("conversations").update({ ai_handling: false, status: "pendente", handoff_reason: "IA não respondeu com segurança" }).eq("id", conversationId);
     return;
@@ -283,7 +286,68 @@ async function tryAutomationOrAiReply(
   await sendBotReply(admin, channel, conversationId, contactId, waId, inboundMessageId, reply, "ai", rawValue);
 }
 
-async function generateAiReply(admin: any, channel: any, conversationId: string, userMessage: string, apiKey: string, inboundMessageId: string) {
+async function trySendVoiceReply(admin: any, channel: any, waId: string, reply: string, accessToken: string) {
+  const now = new Date().toISOString();
+  try {
+    const tts = await synthesizeSpeech(reply, channel.voice_reference_id);
+    if (!tts.ok) throw new Error(tts.error);
+
+    const upload = await uploadWhatsAppMedia(accessToken, channel.phone_number_id, tts.audio, tts.mimeType, "resposta.mp3");
+    if (!upload.ok || !upload.mediaId) {
+      throw new Error(upload.json?.error?.message ?? `Falha no upload de mídia (Meta HTTP ${upload.status}).`);
+    }
+
+    const sent = await sendWhatsAppAudio(accessToken, channel.phone_number_id, waId, upload.mediaId);
+    if (!sent.ok) throw new Error(sent.json?.error?.message ?? `Falha ao enviar áudio (Meta HTTP ${sent.status}).`);
+
+    await admin.from("webhook_events").insert({
+      company_id: channel.company_id,
+      channel_id: channel.id,
+      event_type: "voice_reply_sent",
+      status: "ok",
+      source: "app",
+      payload: { to: waId, media_id: upload.mediaId, bytes: tts.audio.byteLength },
+      processed_at: now,
+    });
+    return sent;
+  } catch (e) {
+    await admin.from("webhook_events").insert({
+      company_id: channel.company_id,
+      channel_id: channel.id,
+      event_type: "voice_reply_failed_fallback_text",
+      status: "error",
+      source: "app",
+      payload: { to: waId },
+      error_message: (e as Error).message,
+      processed_at: now,
+    });
+    return null;
+  }
+}
+
+// Provedor de IA: usa Gemini quando GEMINI_API_KEY existe, senão OpenAI.
+// Ambos falam o protocolo chat/completions (Gemini via endpoint compatível com OpenAI).
+function resolveAiProvider() {
+  const geminiKey = Deno.env.get("GEMINI_API_KEY");
+  if (geminiKey) {
+    return {
+      apiKey: geminiKey,
+      url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      model: Deno.env.get("GEMINI_MODEL") ?? "gemini-2.0-flash",
+    };
+  }
+  const openaiKey = Deno.env.get("OPENAI_API_KEY");
+  if (openaiKey) {
+    return {
+      apiKey: openaiKey,
+      url: "https://api.openai.com/v1/chat/completions",
+      model: Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini",
+    };
+  }
+  return null;
+}
+
+async function generateAiReply(admin: any, channel: any, conversationId: string, userMessage: string, provider: { apiKey: string; url: string; model: string }, inboundMessageId: string) {
   const [{ data: company }, { data: quickReplies }, { data: knowledge }, { data: history }] = await Promise.all([
     admin.from("companies").select("name, segment, business_hours, services_description, communication_tone").eq("id", channel.company_id).maybeSingle(),
     admin.from("quick_replies").select("title, message, category").eq("company_id", channel.company_id).limit(20),
@@ -292,7 +356,8 @@ async function generateAiReply(admin: any, channel: any, conversationId: string,
   ]);
 
   const system = [
-    `Você é a IA de atendimento da empresa ${company?.name ?? "do cliente"}.`,
+    `Você é a atendente virtual da empresa ${company?.name ?? "do cliente"}.`,
+    "Você é uma atendente mulher: fale sempre no feminino, com simpatia e acolhimento.",
     "Responda em português do Brasil, de forma objetiva, educada e comercial.",
     "Use somente as informações cadastradas abaixo. Não invente preço, prazo, endereço ou política.",
     "Se não souber responder, diga: 'Vou chamar uma pessoa da equipe para confirmar isso com você.'",
@@ -312,10 +377,10 @@ async function generateAiReply(admin: any, channel: any, conversationId: string,
     { role: "user", content: userMessage },
   ];
 
-  const model = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const model = provider.model;
+  const res = await fetch(provider.url, {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${provider.apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model, temperature: 0.2, max_tokens: 320, messages }),
   });
 
@@ -329,7 +394,7 @@ async function generateAiReply(admin: any, channel: any, conversationId: string,
       status: "error",
       model,
       input: userMessage,
-      error_message: out?.error?.message ?? `OpenAI HTTP ${res.status}`,
+      error_message: out?.error?.message ?? `IA HTTP ${res.status}`,
     });
     return null;
   }
@@ -365,7 +430,20 @@ async function sendBotReply(
   const secret = await getChannelSecret(admin, channel.id);
   if (!secret?.access_token || !channel.phone_number_id) return;
 
-  const meta = await sendWhatsAppText(secret.access_token, channel.phone_number_id, waId, reply);
+  // Voz feminina de atendimento: quando ligada no canal, a resposta vai como áudio
+  // gerado pela Fish Audio. Qualquer falha na voz cai para texto normal.
+  let meta: { ok: boolean; status: number; json: any } | null = null;
+  let sentAsVoice = false;
+  if (channel.voice_reply_enabled && fishAudioConfigured()) {
+    const voice = await trySendVoiceReply(admin, channel, waId, reply, secret.access_token);
+    if (voice) {
+      meta = voice;
+      sentAsVoice = true;
+    }
+  }
+  if (!meta) {
+    meta = await sendWhatsAppText(secret.access_token, channel.phone_number_id, waId, reply);
+  }
   const now = new Date().toISOString();
 
   if (!meta.ok) {
@@ -389,7 +467,7 @@ async function sendBotReply(
     conversation_id: conversationId,
     contact_id: contactId,
     direction: "outbound",
-    message_type: "text",
+    message_type: sentAsVoice ? "audio" : "text",
     content: reply,
     sender_type: source === "ai" ? "ai" : "agent",
     meta_message_id: meta.json?.messages?.[0]?.id ?? null,

@@ -33,6 +33,46 @@ export async function sendWhatsAppText(accessToken: string, phoneNumberId: strin
   return { ok: res.ok, status: res.status, json };
 }
 
+export async function uploadWhatsAppMedia(
+  accessToken: string,
+  phoneNumberId: string,
+  bytes: Uint8Array,
+  mimeType: string,
+  filename: string,
+) {
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("type", mimeType);
+  form.append("file", new Blob([bytes], { type: mimeType }), filename);
+
+  const res = await fetch(`${graphBase()}/${encodeURIComponent(phoneNumberId)}/media`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
+  });
+  const json = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, json, mediaId: json?.id as string | undefined };
+}
+
+export async function sendWhatsAppAudio(accessToken: string, phoneNumberId: string, to: string, mediaId: string) {
+  const res = await fetch(`${graphBase()}/${encodeURIComponent(phoneNumberId)}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: cleanPhone(to),
+      type: "audio",
+      audio: { id: mediaId },
+    }),
+  });
+  const json = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, json };
+}
+
 export async function upsertContactAndConversation(admin: any, params: {
   companyId: string;
   channelId: string;

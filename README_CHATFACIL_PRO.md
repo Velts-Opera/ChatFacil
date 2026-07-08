@@ -45,12 +45,35 @@ Obrigatórios para produção:
 
 ```bash
 supabase secrets set APP_ENCRYPTION_KEY="gere-uma-chave-forte-com-mais-de-32-caracteres"
-supabase secrets set OPENAI_API_KEY="sk-..."
-supabase secrets set OPENAI_MODEL="gpt-4o-mini"
+supabase secrets set GEMINI_API_KEY="AIza..."
 supabase secrets set META_GRAPH_VERSION="v20.0"
 ```
 
+Opcionais:
+
+```bash
+# IA — Gemini é usado quando GEMINI_API_KEY existe; OpenAI é o fallback.
+supabase secrets set GEMINI_MODEL="gemini-2.0-flash"
+supabase secrets set OPENAI_API_KEY="sk-..."
+supabase secrets set OPENAI_MODEL="gpt-4o-mini"
+
+# Voz feminina de atendimento (respostas da IA em áudio no WhatsApp).
+# Crie a chave em https://fish.audio/pt/app/api-keys/
+supabase secrets set FISH_AUDIO_API_KEY="sua-chave-fish-audio"
+# Escolha um modelo de voz feminina pt-BR em https://fish.audio e copie o ID dele:
+supabase secrets set FISH_AUDIO_VOICE_ID="id-do-modelo-de-voz"
+# Modelo TTS (padrão: s1):
+supabase secrets set FISH_AUDIO_TTS_MODEL="s1"
+```
+
 `APP_ENCRYPTION_KEY` é obrigatória para novas conexões porque o token da Meta é criptografado antes de salvar.
+
+## Voz feminina de atendimento (Fish Audio)
+
+1. Configure `FISH_AUDIO_API_KEY` (e opcionalmente `FISH_AUDIO_VOICE_ID`) nos secrets acima.
+2. Em `Canais > WhatsApp > IA de atendimento`, ligue **Responder com voz feminina**.
+3. Opcional: informe um Voice ID específico por canal (sobrepõe o `FISH_AUDIO_VOICE_ID` global).
+4. A IA responde o cliente com um áudio gerado pela Fish Audio. Se a geração ou o upload do áudio falhar, o cliente recebe a mesma resposta em texto (evento `voice_reply_failed_fallback_text` fica registrado em Eventos).
 
 ## Aplicar banco
 

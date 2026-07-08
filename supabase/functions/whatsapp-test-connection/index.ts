@@ -18,6 +18,8 @@ interface Body {
   greeting_message?: string;
   out_of_hours_message?: string;
   business_hours?: string;
+  voice_reply_enabled?: boolean;
+  voice_reference_id?: string;
 }
 
 Deno.serve(async (req) => {
@@ -83,6 +85,8 @@ Deno.serve(async (req) => {
       greeting_message: body.greeting_message ?? existingChannel?.greeting_message ?? "Olá! Recebemos sua mensagem. Vou te ajudar por aqui.",
       out_of_hours_message: body.out_of_hours_message ?? existingChannel?.out_of_hours_message ?? "Olá! Estamos fora do horário de atendimento. Já recebemos sua mensagem e responderemos assim que possível.",
       business_hours: body.business_hours ?? existingChannel?.business_hours ?? "Segunda a sexta, 09:00 às 18:00",
+      voice_reply_enabled: body.voice_reply_enabled ?? existingChannel?.voice_reply_enabled ?? false,
+      voice_reference_id: body.voice_reference_id?.trim() || existingChannel?.voice_reference_id || null,
       created_by: user.id,
     };
 

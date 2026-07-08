@@ -58,6 +58,8 @@ type Channel = {
   greeting_message?: string | null;
   out_of_hours_message?: string | null;
   business_hours?: string | null;
+  voice_reply_enabled?: boolean | null;
+  voice_reference_id?: string | null;
   app_secret_present?: boolean | null;
   created_at: string;
   updated_at: string;
@@ -230,6 +232,8 @@ function WhatsAppPanel({ channel, loading, onBack, onChanged }: {
   const [greetingMessage, setGreetingMessage] = useState(channel?.greeting_message ?? "Olá! Recebemos sua mensagem. Vou te ajudar por aqui.");
   const [outOfHoursMessage, setOutOfHoursMessage] = useState(channel?.out_of_hours_message ?? "Olá! Estamos fora do horário de atendimento. Já recebemos sua mensagem e responderemos assim que possível.");
   const [businessHours, setBusinessHours] = useState(channel?.business_hours ?? "Segunda a sexta, 09:00 às 18:00");
+  const [voiceReplyEnabled, setVoiceReplyEnabled] = useState(channel?.voice_reply_enabled ?? false);
+  const [voiceReferenceId, setVoiceReferenceId] = useState(channel?.voice_reference_id ?? "");
   const [testing, setTesting] = useState(false);
   const [healthChecking, setHealthChecking] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
@@ -249,6 +253,8 @@ function WhatsAppPanel({ channel, loading, onBack, onChanged }: {
     setGreetingMessage(channel.greeting_message ?? "Olá! Recebemos sua mensagem. Vou te ajudar por aqui.");
     setOutOfHoursMessage(channel.out_of_hours_message ?? "Olá! Estamos fora do horário de atendimento. Já recebemos sua mensagem e responderemos assim que possível.");
     setBusinessHours(channel.business_hours ?? "Segunda a sexta, 09:00 às 18:00");
+    setVoiceReplyEnabled(channel.voice_reply_enabled ?? false);
+    setVoiceReferenceId(channel.voice_reference_id ?? "");
   }, [channel?.id]);
 
   const status = channel?.status ?? "disconnected";
@@ -277,6 +283,8 @@ function WhatsAppPanel({ channel, loading, onBack, onChanged }: {
           greeting_message: greetingMessage,
           out_of_hours_message: outOfHoursMessage,
           business_hours: businessHours,
+          voice_reply_enabled: voiceReplyEnabled,
+          voice_reference_id: voiceReferenceId,
         },
       });
       if (error) throw error;
@@ -423,8 +431,14 @@ function WhatsAppPanel({ channel, loading, onBack, onChanged }: {
             <ToggleRow title="Responder automaticamente com IA" description="Quando ligado, a IA responde clientes no WhatsApp. Quando desligado, ela apenas organiza a conversa." checked={autoReplyEnabled} onCheckedChange={setAutoReplyEnabled} />
             <ToggleRow title="Transferir para humano" description="Mantém conversas pendentes quando a IA não souber responder com segurança." checked={humanHandoffEnabled} onCheckedChange={setHumanHandoffEnabled} />
             <ToggleRow title="Transferir quando não souber" description="Evita resposta inventada e joga a conversa para atendimento humano." checked={handoffWhenUnknown} onCheckedChange={setHandoffWhenUnknown} />
+            <ToggleRow title="Responder com voz feminina" description="A IA envia a resposta como áudio no WhatsApp usando voz feminina (Fish Audio). Se a voz falhar, o cliente recebe texto normalmente." checked={voiceReplyEnabled} onCheckedChange={setVoiceReplyEnabled} />
           </div>
           <div className="grid gap-3">
+            {voiceReplyEnabled && (
+              <Field label="Voice ID da Fish Audio (opcional)">
+                <Input value={voiceReferenceId} onChange={(e) => setVoiceReferenceId(e.target.value)} placeholder="ID do modelo de voz em fish.audio (vazio usa a voz padrão do ambiente)" />
+              </Field>
+            )}
             <Field label="Horário de atendimento"><Input value={businessHours} onChange={(e) => setBusinessHours(e.target.value)} /></Field>
             <Field label="Mensagem de saudação"><Textarea value={greetingMessage} onChange={(e) => setGreetingMessage(e.target.value)} rows={2} /></Field>
             <Field label="Mensagem fora do horário"><Textarea value={outOfHoursMessage} onChange={(e) => setOutOfHoursMessage(e.target.value)} rows={2} /></Field>
