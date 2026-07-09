@@ -14,12 +14,14 @@ import {
 } from "@/components/ui/dialog";
 import {
   ArrowLeft, Bot, CheckCircle2, Copy, Globe, Instagram, KeyRound, Loader2,
-  MessageCircle, MessagesSquare, Plus, Radio, RefreshCw, Send, ShieldCheck,
+  MessageCircle, MessagesSquare, Plus, QrCode, Radio, RefreshCw, Send, ShieldCheck,
   Trash2, TriangleAlert, Workflow, Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
+import { WhatsAppQrConnect } from "@/components/whatsapp-qr-connect";
+import type { ConnectionStatus } from "@/lib/whatsapp/provider";
 
 export const Route = createFileRoute("/_authenticated/canais")({
   head: () => ({
@@ -126,8 +128,9 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const WEBHOOK_URL = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/whatsapp-webhook` : "Configure VITE_SUPABASE_URL";
 
 function CanaisPage() {
-  const [selected, setSelected] = useState<null | "whatsapp" | "instagram" | "messenger" | "webchat">(null);
+  const [selected, setSelected] = useState<null | "whatsapp" | "whatsapp-qr" | "instagram" | "messenger" | "webchat">(null);
   const [whatsChannel, setWhatsChannel] = useState<Channel | null>(null);
+  const [qrChannel, setQrChannel] = useState<Channel | null>(null);
   const [loading, setLoading] = useState(true);
 
   async function loadChannel() {
@@ -140,14 +143,38 @@ function CanaisPage() {
       .limit(1)
       .maybeSingle();
     if (error) toast.error(error.message);
-    setWhatsChannel((data as Channel | null) ?? null);
+    const ch = (data as Channel | null) ?? null;
+    if (ch && (ch as any).provider === "qr_code") {
+      setQrChannel(ch);
+    } else {
+      setWhatsChannel(ch);
+    }
     setLoading(false);
   }
 
-  useEffect(() => { loadChannel(); }, []);
+  async function loadQrChannel() {
+    const { data } = await supabase
+      .from("channels" as any)
+      .select("*")
+      .eq("type", "whatsapp")
+      .eq("provider", "qr_code")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    setQrChannel((data as Channel | null) ?? null);
+  }
+
+  useEffect(() => {
+    loadChannel();
+    loadQrChannel();
+  }, []);
 
   if (selected === "whatsapp") {
     return <WhatsAppPanel channel={whatsChannel} loading={loading} onBack={() => setSelected(null)} onChanged={loadChannel} />;
+  }
+
+  if (selected === "whatsapp-qr") {
+    return <WhatsAppQrPanel channel={qrChannel} onBack={() => setSelected(null)} onChanged={loadQrChannel} />;
   }
 
   return (
@@ -165,9 +192,214 @@ function CanaisPage() {
           status={whatsChannel?.status ?? "disconnected"}
           onClick={() => setSelected("whatsapp")}
         />
+        <ChannelCard
+          icon={<QrCode className="h-5 w-5" />}
+          name="WhatsApp QR Code"
+          description="Conecte via QR Code, sem API oficial."
+          status={(qrChannel?.status as ChannelStatus) ?? "disconnected"}
+          onClick={() => setSelected("whatsapp-qr")}
+        />
         <ChannelCard icon={<Instagram className="h-5 w-5" />} name="Instagram" description="Em breve — Instagram Graph API." status="disconnected" disabled />
         <ChannelCard icon={<MessagesSquare className="h-5 w-5" />} name="Messenger" description="Em breve — Messenger Platform." status="disconnected" disabled />
-        <ChannelCard icon={<Globe className="h-5 w-5" />} name="Webchat" description="Em breve — widget no site." status="disconnected" disabled />
+      </div>
+    </div>
+  );
+}
+
+// ─── Painel WhatsApp QR Code ─────────────────────────────────────────────────
+
+function WhatsAppQrPanel({
+  channel,
+  onBack,
+  onChanged,
+}: {
+  channel: Channel | null;
+  onBack: () => void;
+  onChanged: () => void | Promise<void>;
+}) {
+  const BRIDGE_URL = import.meta.env.VITE_WA_BRIDGE_URL as string | undefined ?? "http://localhost:3001";
+  const [saving, setSaving] = useState(false);
+  const [channelId, setChannelId] = useState<string | null>(channel?.id ?? null);
+  const [currentStatus, setCurrentStatus] = useState<ConnectionStatus>((channel?.status as ConnectionStatus) ?? "disconnected");
+
+  async function ensureChannel(): Promise<string> {
+    if (channelId) return channelId;
+    setSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado");
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("company_id")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (!profile?.company_id) throw new Error("Empresa não encontrada");
+
+      const { data, error } = await supabase
+        .from("channels")
+        .insert({
+          company_id: profile.company_id,
+          type: "whatsapp",
+          name: "WhatsApp QR Code",
+          status: "disconnected",
+          provider: "qr_code",
+          bridge_url: BRIDGE_URL,
+        } as any)
+        .select("id")
+        .single();
+      if (error) throw error;
+      setChannelId(data.id);
+      await onChanged();
+      return data.id;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleConnected(phoneNumber: string) {
+    setCurrentStatus("connected");
+    if (channelId) {
+      await supabase.from("channels").update({
+        status: "connected",
+        phone_number: phoneNumber || null,
+        connected_at: new Date().toISOString(),
+      } as any).eq("id", channelId);
+    }
+    await onChanged();
+  }
+
+  async function handleDisconnected() {
+    setCurrentStatus("disconnected");
+    if (channelId) {
+      await supabase.from("channels").update({ status: "disconnected" } as any).eq("id", channelId);
+    }
+    await onChanged();
+  }
+
+  async function getResolvedChannelId(): Promise<string> {
+    if (channelId) return channelId;
+    return ensureChannel();
+  }
+
+  const [resolvedId, setResolvedId] = useState<string | null>(channel?.id ?? null);
+
+  useEffect(() => {
+    if (!resolvedId) {
+      ensureChannel().then((id) => setResolvedId(id)).catch(() => {});
+    }
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="space-y-6 p-4 sm:p-6">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={onBack} className="-ml-2">
+          <ArrowLeft className="h-5 w-5" />
+        </Button>
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">WhatsApp via QR Code</h1>
+          <p className="text-sm text-muted-foreground">Conecte sem precisar da API oficial da Meta.</p>
+        </div>
+      </div>
+
+      <div className="rounded-xl border bg-card p-6 shadow-sm">
+        <div className="mb-4">
+          <h2 className="font-medium">Conexão via QR Code</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Certifique-se de que o bridge server está rodando. Clique em <strong>Gerar QR Code</strong> e escaneie com o seu WhatsApp.
+          </p>
+        </div>
+
+        {saving && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
+            <Loader2 className="h-4 w-4 animate-spin" /> Criando canal...
+          </div>
+        )}
+
+        {resolvedId && (
+          <WhatsAppQrConnect
+            channelId={resolvedId}
+            bridgeUrl={BRIDGE_URL}
+            initialStatus={currentStatus}
+            onConnected={handleConnected}
+            onDisconnected={handleDisconnected}
+          />
+        )}
+      </div>
+
+      {resolvedId && <QrAiSettings channelId={resolvedId} />}
+
+      <div className="rounded-xl border bg-muted/30 p-5">
+        <h3 className="font-medium text-sm mb-3">Como iniciar o bridge server</h3>
+        <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
+          <li>Abra um terminal separado (não o Claude Code)</li>
+          <li>
+            <code className="rounded bg-muted px-1 font-mono text-xs">cd C:\Users\Veltrani\ChatFacil\server</code>
+          </li>
+          <li>
+            <code className="rounded bg-muted px-1 font-mono text-xs">npm install</code>
+          </li>
+          <li>
+            <code className="rounded bg-muted px-1 font-mono text-xs">node whatsapp-bridge.js</code>
+          </li>
+        </ol>
+      </div>
+    </div>
+  );
+}
+
+function QrAiSettings({ channelId }: { channelId: string }) {
+  const [aiEnabled, setAiEnabled] = useState<boolean | null>(null);
+  const [autoReply, setAutoReply] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    supabase.from("channels" as any).select("ai_enabled, auto_reply_enabled").eq("id", channelId).maybeSingle()
+      .then(({ data }: any) => {
+        if (data) { setAiEnabled(data.ai_enabled ?? false); setAutoReply(data.auto_reply_enabled ?? false); }
+      });
+  }, [channelId]);
+
+  async function save(field: "ai_enabled" | "auto_reply_enabled", value: boolean) {
+    setSaving(true);
+    const { error } = await supabase.from("channels" as any).update({ [field]: value } as any).eq("id", channelId);
+    if (error) toast.error(error.message);
+    else {
+      if (field === "ai_enabled") setAiEnabled(value);
+      else setAutoReply(value);
+      toast.success("Configuração salva.");
+    }
+    setSaving(false);
+  }
+
+  if (aiEnabled === null) return null;
+
+  return (
+    <div className="rounded-xl border bg-card p-6 shadow-sm">
+      <div className="mb-4 flex items-center gap-2">
+        <Bot className="h-4 w-4 text-primary" />
+        <h2 className="font-medium">IA de atendimento (Gemini)</h2>
+      </div>
+      <div className="space-y-3">
+        <ToggleRow
+          title="Habilitar IA nesse canal"
+          description="Permite que o Gemini processe as mensagens recebidas."
+          checked={aiEnabled}
+          onCheckedChange={(v) => save("ai_enabled", v)}
+        />
+        <ToggleRow
+          title="Responder automaticamente com IA"
+          description="Quando ativado, o Gemini responde cada mensagem recebida automaticamente."
+          checked={autoReply}
+          onCheckedChange={(v) => save("auto_reply_enabled", v)}
+        />
+        {saving && <p className="text-xs text-muted-foreground">Salvando...</p>}
+        {autoReply && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+            Configure a base de conhecimento na seção abaixo para que a IA responda com precisão.
+            Certifique-se de que o secret <strong>GEMINI_API_KEY</strong> está configurado no Supabase.
+          </p>
+        )}
       </div>
     </div>
   );

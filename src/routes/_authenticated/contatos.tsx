@@ -13,7 +13,7 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Plus, MessageSquare } from "lucide-react";
+import { Plus } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/contatos")({
@@ -151,12 +151,11 @@ function ContactsPage() {
               <th className="px-4 py-3 hidden md:table-cell">Etapa</th>
               <th className="px-4 py-3 hidden lg:table-cell">Valor potencial</th>
               <th className="px-4 py-3 hidden lg:table-cell">Última interação</th>
-              <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody>
             {contacts.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">Nenhum contato ainda.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">Nenhum contato ainda.</td></tr>
             )}
             {contacts.map((c: any) => (
               <tr key={c.id} className="border-t border-border hover:bg-muted/30">
@@ -167,9 +166,6 @@ function ContactsPage() {
                 <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">R$ {Number(c.potential_value ?? 0).toFixed(2)}</td>
                 <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">
                   {c.last_interaction_at ? new Date(c.last_interaction_at).toLocaleDateString("pt-BR") : "—"}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <Button size="sm" variant="ghost"><MessageSquare className="h-4 w-4" /></Button>
                 </td>
               </tr>
             ))}

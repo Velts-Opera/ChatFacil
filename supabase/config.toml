@@ -19,3 +19,6 @@ verify_jwt = true
 
 [functions.whatsapp-health-check]
 verify_jwt = true
+
+[functions.whatsapp-qr-event]
+verify_jwt = false

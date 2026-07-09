@@ -14,6 +14,8 @@ dist-ssr
 .vinxi
 .tanstack/**
 .nitro
+.venv/
+.mcp.json
 *.local
 .env
 .env.*
@@ -22,6 +24,15 @@ dist-ssr
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars
+
+# Supabase local state
+supabase/.temp/
+
+# Local WhatsApp bridge auth state
+server/sessions/
+
+# Local notes/vaults
+ChatFacil/
 
 # Editor directories and files
 .vscode/*

@@ -88,8 +88,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: "Comunica AI — Transforme seu WhatsApp em uma máquina de vendas" },
       { name: "twitter:description", content: "Plataforma de atendimento, CRM e automação para WhatsApp e Instagram. Automatize respostas, qualifique leads e venda mais com IA." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/dd930780-a68b-43bd-9622-e8bd5460d398/id-preview-a356fed3--e9e994d3-9630-457a-8605-c851885fb9ba.lovable.app-1783360174913.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/dd930780-a68b-43bd-9622-e8bd5460d398/id-preview-a356fed3--e9e994d3-9630-457a-8605-c851885fb9ba.lovable.app-1783360174913.png" },
     ],
     links: [
       {

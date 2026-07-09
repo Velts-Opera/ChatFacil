@@ -10,6 +10,41 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { MessageSquareText, Loader2 } from "lucide-react";
 
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
+function getAuthRedirectTo(path = "") {
+  if (typeof window === "undefined") return undefined;
+
+  const { origin } = window.location;
+  const isLocalOrigin = origin.startsWith("http://127.0.0.1") || origin.startsWith("http://localhost");
+
+  return isLocalOrigin ? undefined : `${origin}${path}`;
+}
+
+function getSupabaseAuthMessage(message: string) {
+  const lowerMessage = message.toLowerCase();
+
+  if (lowerMessage.includes("invalid login credentials")) {
+    return "E-mail ou senha inválidos.";
+  }
+
+  if (lowerMessage.includes("email not confirmed")) {
+    return "Confirme seu e-mail antes de entrar.";
+  }
+
+  if (lowerMessage.includes("already registered") || lowerMessage.includes("already been registered")) {
+    return "Este e-mail já está cadastrado. Entre com sua senha ou recupere o acesso.";
+  }
+
+  if (lowerMessage.includes("redirect") || lowerMessage.includes("not allowed")) {
+    return "URL de autenticação não autorizada no Supabase. Cadastre o domínio atual nas URLs permitidas.";
+  }
+
+  return message || "Não foi possível autenticar agora.";
+}
+
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
@@ -82,25 +117,28 @@ function LoginForm() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email: normalizeEmail(email),
+      password,
+    });
     setLoading(false);
-    if (error) return toast.error(error.message);
+    if (error) return toast.error(getSupabaseAuthMessage(error.message));
     toast.success("Bem-vindo de volta!");
     navigate({ to: "/dashboard" });
   }
 
   async function onGoogle() {
-    const res = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
-    if (res.error) toast.error("Falha ao entrar com Google");
+    const res = await lovable.auth.signInWithOAuth("google", { redirect_uri: getAuthRedirectTo("/dashboard") });
+    if (res.error) toast.error(getSupabaseAuthMessage(res.error.message));
     else if (!res.redirected) navigate({ to: "/dashboard" });
   }
 
   async function onForgot() {
     if (!email) return toast.error("Informe seu e-mail acima primeiro");
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizeEmail(email), {
+      redirectTo: getAuthRedirectTo("/reset-password"),
     });
-    if (error) toast.error(error.message);
+    if (error) toast.error(getSupabaseAuthMessage(error.message));
     else toast.success("Enviamos um link de recuperação para seu e-mail.");
   }
 
@@ -155,31 +193,37 @@ function SignupForm() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email: form.email,
+    const { data, error } = await supabase.auth.signUp({
+      email: normalizeEmail(form.email),
       password: form.password,
       options: {
-        emailRedirectTo: window.location.origin,
+        emailRedirectTo: getAuthRedirectTo(),
         data: {
-          company_name: form.company_name,
-          segment: form.segment,
-          phone: form.phone,
-          contact_name: form.contact_name,
-          business_hours: form.business_hours,
-          services_description: form.services_description,
-          communication_tone: form.communication_tone,
+          company_name: form.company_name.trim(),
+          segment: form.segment.trim(),
+          phone: form.phone.trim(),
+          contact_name: form.contact_name.trim(),
+          business_hours: form.business_hours.trim(),
+          services_description: form.services_description.trim(),
+          communication_tone: form.communication_tone.trim(),
         },
       },
     });
     setLoading(false);
-    if (error) return toast.error(error.message);
-    toast.success("Conta criada! Verifique seu e-mail se necessário.");
-    navigate({ to: "/dashboard" });
+    if (error) return toast.error(getSupabaseAuthMessage(error.message));
+
+    if (data.session) {
+      toast.success("Conta criada!");
+      navigate({ to: "/dashboard" });
+      return;
+    }
+
+    toast.success("Conta criada! Verifique seu e-mail para ativar o acesso.");
   }
 
   async function onGoogle() {
-    const res = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
-    if (res.error) toast.error("Falha ao entrar com Google");
+    const res = await lovable.auth.signInWithOAuth("google", { redirect_uri: getAuthRedirectTo("/dashboard") });
+    if (res.error) toast.error(getSupabaseAuthMessage(res.error.message));
     else if (!res.redirected) navigate({ to: "/dashboard" });
   }
 
