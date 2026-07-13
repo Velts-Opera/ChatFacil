@@ -14,6 +14,7 @@ import { makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaile
 import { Boom } from '@hapi/boom';
 import qrcode from 'qrcode';
 import pino from 'pino';
+import { extractText, toJid } from './lib/wa-helpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
@@ -46,11 +47,11 @@ function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
-/** Notifica Supabase sobre eventos da sessão */
+/** Notifica Supabase sobre eventos da sessão e retorna o JSON de resposta */
 async function notifySupabase(event, payload) {
   if (!SUPABASE_URL || !BRIDGE_SECRET) {
     logger.warn('[bridge] SUPABASE_URL ou BRIDGE_SECRET não configurados — callback ignorado');
-    return;
+    return null;
   }
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/whatsapp-qr-event`, {
@@ -62,11 +63,14 @@ async function notifySupabase(event, payload) {
       body: JSON.stringify({ event, ...payload }),
     });
     if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      logger.warn({ status: res.status, body: text }, '[bridge] notifySupabase erro');
+      const bodyText = await res.text().catch(() => '');
+      logger.warn({ status: res.status, body: bodyText }, '[bridge] notifySupabase erro');
+      return null;
     }
+    return await res.json().catch(() => null);
   } catch (err) {
     logger.error({ err }, '[bridge] notifySupabase falhou');
+    return null;
   }
 }
 
@@ -163,20 +167,16 @@ async function startSession(channelId) {
       const from = msg.key.remoteJid ?? '';
       if (from.endsWith('@g.us')) continue; // ignora grupos por ora
 
-      const content =
-        msg.message?.conversation ??
-        msg.message?.extendedTextMessage?.text ??
-        msg.message?.imageMessage?.caption ??
-        '[mídia]';
-
+      const content = extractText(msg.message);
       const waId = from.replace('@s.whatsapp.net', '');
       const pushName = msg.pushName ?? waId;
 
       logger.info({ channelId, from: waId, content }, '[bridge] Mensagem recebida');
 
-      await notifySupabase('message_received', {
+      const result = await notifySupabase('message_received', {
         channelId,
         waId,
+        rawJid: msg.key.remoteJid,
         pushName,
         content,
         messageId: msg.key.id,
@@ -184,6 +184,16 @@ async function startSession(channelId) {
           ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
           : new Date().toISOString(),
       });
+
+      if (result?.reply) {
+        const replyTo = toJid(result.to ?? from);
+        const jitter = 800 + Math.floor(Math.random() * 1400);
+        setTimeout(() => {
+          queueSend(session, replyTo, result.reply).catch((err) =>
+            logger.error({ err }, '[bridge] Erro ao enviar resposta da IA'),
+          );
+        }, jitter);
+      }
     }
   });
 
@@ -222,7 +232,7 @@ async function processSendQueue(session) {
   const { to, message, resolve, reject } = session.sendQueue.shift();
 
   try {
-    const jid = to.includes('@') ? to : `${to.replace(/\D/g, '')}@s.whatsapp.net`;
+    const jid = toJid(to);
     await session.socket.sendMessage(jid, { text: message });
     resolve({ ok: true });
   } catch (err) {
@@ -243,7 +253,7 @@ app.use(cors({
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, sessions: sessions.size });
+  res.json({ ok: true, sessions: sessions.size, uptime: process.uptime() });
 });
 
 /** Inicia sessão para um canal */
@@ -288,6 +298,10 @@ app.get('/session/:channelId/status', (req, res) => {
 
 /** Envia mensagem */
 app.post('/session/:channelId/send', async (req, res) => {
+  if (BRIDGE_SECRET && req.headers['x-bridge-secret'] !== BRIDGE_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
   const { channelId } = req.params;
   const { to, message } = req.body;
 
