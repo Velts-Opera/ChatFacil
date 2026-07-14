@@ -44,3 +44,8 @@ ChatFacil/
 *.njsproj
 *.sln
 *.sw?
+.vercel
+.claude-flow/
+.swarm/
+.claude/
+ruvector.db
