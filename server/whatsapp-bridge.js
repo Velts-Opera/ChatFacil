@@ -347,8 +347,14 @@ async function processSendQueue(session) {
 
 const app = express();
 
+const DEFAULT_CORS_ORIGINS = ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'http://localhost:8080', 'http://127.0.0.1:8080'];
+const corsOrigins = (process.env.CORS_ORIGINS ?? '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'http://localhost:8080', 'http://127.0.0.1:8080'],
+  origin: corsOrigins.length > 0 ? corsOrigins : DEFAULT_CORS_ORIGINS,
   methods: ['GET', 'POST', 'OPTIONS'],
 }));
 app.use(express.json());
@@ -439,7 +445,42 @@ app.post('/session/:channelId/disconnect', async (req, res) => {
 
 ensureDir(SESSIONS_DIR);
 
+/**
+ * Restaura no boot todas as sessões de tenants que já haviam conectado.
+ * Sem isso, um restart do serviço derruba o WhatsApp de todos os clientes
+ * até cada um clicar em "Gerar QR Code" de novo.
+ */
+async function restoreSessions() {
+  let entries = [];
+  try {
+    entries = fs.readdirSync(SESSIONS_DIR, { withFileTypes: true });
+  } catch (err) {
+    logger.warn({ err }, '[bridge] Não foi possível ler o diretório de sessões');
+    return;
+  }
+  const channelIds = entries
+    .filter((entry) => entry.isDirectory())
+    .filter((entry) => fs.existsSync(path.join(SESSIONS_DIR, entry.name, 'creds.json')))
+    .map((entry) => entry.name);
+
+  if (channelIds.length === 0) {
+    logger.info('[bridge] Nenhuma sessão anterior para restaurar');
+    return;
+  }
+
+  logger.info({ count: channelIds.length }, '[bridge] Restaurando sessões de tenants');
+  for (const channelId of channelIds) {
+    try {
+      await startSession(channelId);
+      logger.info({ channelId }, '[bridge] Sessão restaurada');
+    } catch (err) {
+      logger.error({ err, channelId }, '[bridge] Falha ao restaurar sessão');
+    }
+  }
+}
+
 app.listen(PORT, BRIDGE_HOST, () => {
   logger.info(`[bridge] ChatFacil WhatsApp Bridge rodando em http://${BRIDGE_HOST}:${PORT}`);
   logger.info(`[bridge] Supabase URL: ${SUPABASE_URL || '(não configurado)'}`);
+  restoreSessions().catch((err) => logger.error({ err }, '[bridge] Restauração de sessões falhou'));
 });

@@ -37,12 +37,15 @@ writeFileSync(
   JSON.stringify({
     version: 3,
     routes: [
-      // Serve static assets directly
+      // Cache imutável para assets com hash no nome
       {
         src: "^/assets/(.*)$",
-        dest: "/assets/$1",
+        headers: { "cache-control": "public, max-age=31536000, immutable" },
+        continue: true,
       },
-      // All other routes go to the edge SSR function
+      // Serve qualquer arquivo estático existente (assets, favicon, etc.)
+      { handle: "filesystem" },
+      // Todo o resto vai para a função SSR edge
       {
         src: "/(.*)",
         dest: "/index",

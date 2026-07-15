@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, Loader2, PhoneOff, QrCode, TriangleAlert, Wifi, WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { QrCodeProvider } from "@/lib/whatsapp/qr-provider";
+import { createQrProvider } from "@/lib/whatsapp/qr-provider";
 import type { ConnectionStatus } from "@/lib/whatsapp/provider";
 
 interface Props {
@@ -36,12 +36,13 @@ export function WhatsAppQrConnect({ channelId, bridgeUrl, initialStatus, onConne
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [bridgeOnline, setBridgeOnline] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
+  const [lastError, setLastError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const provider = useRef(new QrCodeProvider(channelId, bridgeUrl));
+  const provider = useRef(createQrProvider(channelId, bridgeUrl));
 
   useEffect(() => {
-    provider.current = new QrCodeProvider(channelId, bridgeUrl);
+    provider.current = createQrProvider(channelId, bridgeUrl);
   }, [channelId, bridgeUrl]);
 
   const stopPoll = useCallback(() => {
@@ -52,25 +53,26 @@ export function WhatsAppQrConnect({ channelId, bridgeUrl, initialStatus, onConne
   }, []);
 
   const poll = useCallback(async () => {
-    try {
-      const data = await provider.current.getQrCode();
-      setStatus(data.status);
-      setQr(data.qr);
-      if (data.phoneNumber) setPhoneNumber(data.phoneNumber);
-
-      if (data.status === "connected") {
-        stopPoll();
-        onConnected?.(data.phoneNumber ?? "");
-      }
-      if (data.status === "disconnected") {
-        stopPoll();
-        setQr(null);
-        onDisconnected?.();
-      }
-    } catch {
-      // Bridge offline — para o polling silenciosamente
+    const data = await provider.current.getQrCode();
+    if (data.status === "error") {
+      // Bridge indisponível — para o polling e marca offline
       stopPoll();
       setBridgeOnline(false);
+      return;
+    }
+    setBridgeOnline(true);
+    setStatus(data.status);
+    setQr(data.qr);
+    if (data.phoneNumber) setPhoneNumber(data.phoneNumber);
+
+    if (data.status === "connected") {
+      stopPoll();
+      onConnected?.(data.phoneNumber ?? "");
+    }
+    if (data.status === "disconnected") {
+      stopPoll();
+      setQr(null);
+      onDisconnected?.();
     }
   }, [stopPoll, onConnected, onDisconnected]);
 
@@ -83,14 +85,12 @@ export function WhatsAppQrConnect({ channelId, bridgeUrl, initialStatus, onConne
   // Verifica o bridge continuamente para recuperar após ele ser iniciado
   useEffect(() => {
     let cancelled = false;
-    const url = (bridgeUrl ?? "http://127.0.0.1:3001").replace(/\/$/, "");
-    const check = () => fetch(`${url}/health`, { signal: AbortSignal.timeout(3000) })
-      .then((r) => { if (!cancelled) setBridgeOnline(r.ok); })
-      .catch(() => { if (!cancelled) setBridgeOnline(false); });
+    const check = () => provider.current.checkHealth()
+      .then((ok) => { if (!cancelled) setBridgeOnline(ok); });
     check();
-    const timer = setInterval(check, 4000);
+    const timer = setInterval(check, 8000);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [bridgeUrl]);
+  }, [channelId, bridgeUrl]);
 
   useEffect(() => {
     if (bridgeOnline && (status === "qr_pending" || status === "reconnecting") && !pollRef.current) {
@@ -108,13 +108,14 @@ export function WhatsAppQrConnect({ channelId, bridgeUrl, initialStatus, onConne
 
   async function handleConnect() {
     setLoading(true);
+    setLastError(null);
     try {
       await provider.current.connect();
       setStatus("qr_pending");
       startPoll();
     } catch (err) {
       setStatus("error");
-      setBridgeOnline(false);
+      setLastError(err instanceof Error ? err.message : "Falha ao iniciar a sessão.");
     } finally {
       setLoading(false);
     }
@@ -145,14 +146,19 @@ export function WhatsAppQrConnect({ channelId, bridgeUrl, initialStatus, onConne
         <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <div>
-            <p className="font-medium text-amber-900">Bridge não encontrado em {bridgeUrl ?? "http://localhost:3001"}</p>
+            <p className="font-medium text-amber-900">Servidor de WhatsApp indisponível</p>
             <p className="mt-1 text-amber-700">
-              Abra um terminal separado e execute:
-              <code className="ml-1 rounded bg-amber-100 px-1 font-mono text-xs">
-                cd ChatFacil/server && npm install && node whatsapp-bridge.js
-              </code>
+              O serviço que mantém as conexões de WhatsApp está fora do ar no momento.
+              Tente novamente em instantes. Se o problema persistir, contate o suporte da plataforma.
             </p>
           </div>
+        </div>
+      )}
+
+      {lastError && (
+        <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+          <p className="text-red-800">{lastError}</p>
         </div>
       )}
 

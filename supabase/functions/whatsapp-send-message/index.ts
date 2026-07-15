@@ -23,7 +23,7 @@ Deno.serve(async (req) => {
 
     const { data: channel, error: channelError } = await admin
       .from("channels")
-      .select("id, company_id, status, phone_number_id")
+      .select("id, company_id, status, phone_number_id, provider")
       .eq("id", body.channel_id)
       .eq("company_id", companyId)
       .maybeSingle();
@@ -31,9 +31,13 @@ Deno.serve(async (req) => {
     if (!channel) return json({ error: "Canal não encontrado." }, 404);
     if (channel.status !== "connected") return json({ error: "Canal não está conectado." }, 400);
 
-    const secret = await getChannelSecret(admin, channel.id);
-    if (!secret?.access_token || !channel.phone_number_id) {
-      return json({ error: "Credenciais do canal não encontradas." }, 400);
+    const isQrChannel = channel.provider === "qr_code";
+    let secret: { access_token?: string } | null = null;
+    if (!isQrChannel) {
+      secret = await getChannelSecret(admin, channel.id);
+      if (!secret?.access_token || !channel.phone_number_id) {
+        return json({ error: "Credenciais do canal não encontradas." }, 400);
+      }
     }
 
     let to = cleanPhone(body.to ?? "");
@@ -56,20 +60,52 @@ Deno.serve(async (req) => {
 
     if (!to || to.length < 10) return json({ error: "Telefone destino inválido. Use DDI + DDD + número." }, 400);
 
-    const meta = await sendWhatsAppText(secret.access_token, channel.phone_number_id, to, body.message.trim());
-    if (!meta.ok) {
-      const errMsg = meta.json?.error?.message || `Meta API retornou HTTP ${meta.status}`;
-      await admin.from("webhook_events").insert({
-        company_id: companyId,
-        channel_id: channel.id,
-        event_type: "send_message_failed",
-        status: "error",
-        source: "app",
-        payload: { request: { to, message: body.message }, response: meta.json },
-        error_message: errMsg,
-        processed_at: new Date().toISOString(),
-      });
-      return json({ ok: false, error: errMsg, meta: meta.json }, 200);
+    let metaJson: any = null;
+    if (isQrChannel) {
+      // Canal QR: envia pelo bridge Baileys hospedado, na sessão exclusiva do canal.
+      const bridgeUrl = (Deno.env.get("WA_BRIDGE_URL") ?? "").replace(/\/$/, "");
+      const bridgeSecret = Deno.env.get("BRIDGE_SECRET") ?? "";
+      if (!bridgeUrl || !bridgeSecret) {
+        return json({ error: "Bridge não configurado. Defina WA_BRIDGE_URL e BRIDGE_SECRET." }, 503);
+      }
+      const bridgeRes = await fetch(`${bridgeUrl}/session/${channel.id}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-bridge-secret": bridgeSecret },
+        body: JSON.stringify({ to, message: body.message.trim() }),
+        signal: AbortSignal.timeout(20_000),
+      }).catch((e) => ({ ok: false, status: 502, json: async () => ({ error: String(e) }) }) as any);
+      const bridgeJson = await bridgeRes.json().catch(() => null);
+      if (!bridgeRes.ok) {
+        const errMsg = bridgeJson?.error || `Bridge retornou HTTP ${bridgeRes.status}`;
+        await admin.from("webhook_events").insert({
+          company_id: companyId,
+          channel_id: channel.id,
+          event_type: "send_message_failed",
+          status: "error",
+          source: "app",
+          payload: { request: { to, message: body.message }, response: bridgeJson },
+          error_message: errMsg,
+          processed_at: new Date().toISOString(),
+        });
+        return json({ ok: false, error: errMsg }, 200);
+      }
+    } else {
+      const meta = await sendWhatsAppText(secret!.access_token!, channel.phone_number_id!, to, body.message.trim());
+      if (!meta.ok) {
+        const errMsg = meta.json?.error?.message || `Meta API retornou HTTP ${meta.status}`;
+        await admin.from("webhook_events").insert({
+          company_id: companyId,
+          channel_id: channel.id,
+          event_type: "send_message_failed",
+          status: "error",
+          source: "app",
+          payload: { request: { to, message: body.message }, response: meta.json },
+          error_message: errMsg,
+          processed_at: new Date().toISOString(),
+        });
+        return json({ ok: false, error: errMsg, meta: meta.json }, 200);
+      }
+      metaJson = meta.json;
     }
 
     const { contactId, conversationId } = await upsertContactAndConversation(admin, {
@@ -81,7 +117,7 @@ Deno.serve(async (req) => {
       lastMessage: body.message.trim(),
     });
 
-    const metaMessageId = meta.json?.messages?.[0]?.id ?? null;
+    const metaMessageId = metaJson?.messages?.[0]?.id ?? null;
     const { data: savedMessage, error: messageError } = await admin.from("messages").insert({
       company_id: companyId,
       channel_id: channel.id,
@@ -93,7 +129,7 @@ Deno.serve(async (req) => {
       sender_type: "agent",
       meta_message_id: metaMessageId,
       status: "sent",
-      raw_payload: meta.json,
+      raw_payload: metaJson,
     }).select("id").single();
     if (messageError) throw messageError;
 
@@ -104,7 +140,7 @@ Deno.serve(async (req) => {
       event_type: "message_sent",
       status: "ok",
       source: "app",
-      payload: { to, meta_message_id: metaMessageId, response: meta.json },
+      payload: { to, meta_message_id: metaMessageId, response: metaJson },
       processed_at: now,
     });
     await admin.from("channels").update({ last_sync_at: now }).eq("id", channel.id);

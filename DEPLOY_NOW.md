@@ -1,5 +1,10 @@
 # Deploy rápido — ChatFácil AI Production
 
+> **WhatsApp via QR Code multi-tenant (cada cliente com o próprio número):**
+> siga o guia completo em [`ARQUITETURA_MULTITENANT.md`](./ARQUITETURA_MULTITENANT.md) —
+> ele cobre o deploy do bridge (Railway/Render), os secrets `WA_BRIDGE_URL`/`BRIDGE_SECRET`
+> e a Edge Function `whatsapp-qr-bridge`.
+
 ## 1) Instalar dependências
 
 ```bash

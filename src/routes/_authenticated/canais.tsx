@@ -219,7 +219,9 @@ function WhatsAppQrPanel({
   onBack: () => void;
   onChanged: () => void | Promise<void>;
 }) {
-  const BRIDGE_URL = import.meta.env.VITE_WA_BRIDGE_URL as string | undefined ?? "http://127.0.0.1:3001";
+  // Sem VITE_WA_BRIDGE_URL o fluxo usa a Edge Function (produção multi-tenant);
+  // com ela, fala direto com um bridge local (desenvolvimento).
+  const BRIDGE_URL = import.meta.env.VITE_WA_BRIDGE_URL as string | undefined;
   const [saving, setSaving] = useState(false);
   const [channelId, setChannelId] = useState<string | null>(channel?.id ?? null);
   const [currentStatus, setCurrentStatus] = useState<ConnectionStatus>((channel?.status as ConnectionStatus) ?? "disconnected");
@@ -246,7 +248,7 @@ function WhatsAppQrPanel({
           name: "WhatsApp QR Code",
           status: "disconnected",
           provider: "qr_code",
-          bridge_url: BRIDGE_URL,
+          bridge_url: BRIDGE_URL ?? null,
         } as any)
         .select("id")
         .single();
@@ -332,19 +334,12 @@ function WhatsAppQrPanel({
       {resolvedId && <QrAiSettings channelId={resolvedId} />}
 
       <div className="rounded-xl border bg-muted/30 p-5">
-        <h3 className="font-medium text-sm mb-3">Como iniciar o bridge server</h3>
-        <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
-          <li>Abra um terminal separado (não o Claude Code)</li>
-          <li>
-            <code className="rounded bg-muted px-1 font-mono text-xs">cd C:\Users\Veltrani\ChatFacil\server</code>
-          </li>
-          <li>
-            <code className="rounded bg-muted px-1 font-mono text-xs">npm install</code>
-          </li>
-          <li>
-            <code className="rounded bg-muted px-1 font-mono text-xs">node whatsapp-bridge.js</code>
-          </li>
-        </ol>
+        <h3 className="font-medium text-sm mb-3">Como funciona</h3>
+        <ul className="text-sm text-muted-foreground space-y-2 list-disc list-inside">
+          <li>Cada empresa tem seu próprio canal, sua própria sessão de WhatsApp e seu próprio agente de IA.</li>
+          <li>Ao escanear o QR Code, o número conectado passa a ser o número exclusivo da sua empresa.</li>
+          <li>Nenhuma sessão, conversa ou agente é compartilhado entre empresas.</li>
+        </ul>
       </div>
     </div>
   );
