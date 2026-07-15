@@ -1,7 +1,7 @@
 -- ChatFacil AI Pro Backend hardening
 -- Real WhatsApp Cloud API model, secure credential storage, AI auto-reply tables,
 -- indexes and sane status defaults. This migration is additive and safe over the
--- Lovable-generated schema.
+-- initial MVP schema.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 

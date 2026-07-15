@@ -4,7 +4,7 @@ Este pacote entrega a versão endurecida do Comunica AI / ChatFácil AI para ope
 
 ## Entregue nesta versão
 
-- Frontend React/TanStack pronto para Lovable/Vercel/Railway/Vite.
+- Frontend React/TanStack pronto para Vercel/Railway/Vite.
 - Supabase Auth + RLS por empresa.
 - Banco multiempresa com contatos, conversas, mensagens, canais, eventos, IA, templates, auditoria e health checks.
 - Conexão real com WhatsApp Cloud API por `Phone Number ID`, `WABA ID`, `Access Token`, `Verify Token` e `App Secret`.
@@ -29,7 +29,7 @@ Este pacote entrega a versão endurecida do Comunica AI / ChatFácil AI para ope
 
 ## Variáveis do frontend
 
-No Lovable/Vercel/Railway:
+No Vercel/Railway:
 
 ```env
 VITE_SUPABASE_URL=https://SEU-PROJETO.supabase.co
