@@ -1,7 +1,6 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -128,9 +127,12 @@ function LoginForm() {
   }
 
   async function onGoogle() {
-    const res = await lovable.auth.signInWithOAuth("google", { redirect_uri: getAuthRedirectTo("/dashboard") });
-    if (res.error) toast.error(getSupabaseAuthMessage(res.error.message));
-    else if (!res.redirected) navigate({ to: "/dashboard" });
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: getAuthRedirectTo("/dashboard") },
+    });
+    if (error) toast.error(getSupabaseAuthMessage(error.message));
+    else if (!data.url) navigate({ to: "/dashboard" });
   }
 
   async function onForgot() {
@@ -222,9 +224,12 @@ function SignupForm() {
   }
 
   async function onGoogle() {
-    const res = await lovable.auth.signInWithOAuth("google", { redirect_uri: getAuthRedirectTo("/dashboard") });
-    if (res.error) toast.error(getSupabaseAuthMessage(res.error.message));
-    else if (!res.redirected) navigate({ to: "/dashboard" });
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: getAuthRedirectTo("/dashboard") },
+    });
+    if (error) toast.error(getSupabaseAuthMessage(error.message));
+    else if (!data.url) navigate({ to: "/dashboard" });
   }
 
   return (
