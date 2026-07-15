@@ -154,7 +154,7 @@ function CanaisPage() {
 
   async function loadQrChannel() {
     const { data } = await supabase
-      .from("channels" as any)
+      .from("channels")
       .select("*")
       .eq("type", "whatsapp")
       .eq("provider", "qr_code")
@@ -354,7 +354,7 @@ function QrAiSettings({ channelId }: { channelId: string }) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    supabase.from("channels" as any).select("ai_enabled, auto_reply_enabled").eq("id", channelId).maybeSingle()
+    supabase.from("channels").select("ai_enabled, auto_reply_enabled").eq("id", channelId).maybeSingle()
       .then(({ data }: any) => {
         if (data) { setAiEnabled(data.ai_enabled ?? false); setAutoReply(data.auto_reply_enabled ?? false); }
       });
@@ -362,7 +362,7 @@ function QrAiSettings({ channelId }: { channelId: string }) {
 
   async function save(field: "ai_enabled" | "auto_reply_enabled", value: boolean) {
     setSaving(true);
-    const { error } = await supabase.from("channels" as any).update({ [field]: value } as any).eq("id", channelId);
+    const { error } = await supabase.from("channels").update({ [field]: value } as any).eq("id", channelId);
     if (error) toast.error(error.message);
     else {
       if (field === "ai_enabled") setAiEnabled(value);
@@ -390,7 +390,7 @@ function QrAiSettings({ channelId }: { channelId: string }) {
         <ToggleRow
           title="Responder automaticamente com IA"
           description="Quando ativado, o Gemini responde cada mensagem recebida automaticamente."
-          checked={autoReply}
+          checked={autoReply ?? false}
           onCheckedChange={(v) => save("auto_reply_enabled", v)}
         />
         {saving && <p className="text-xs text-muted-foreground">Salvando...</p>}
@@ -804,7 +804,7 @@ function AiInteractionsTable({ channelId }: { channelId: string }) {
   async function load() {
     setLoading(true);
     const { data, error } = await supabase
-      .from("ai_interactions" as any)
+      .from("ai_interactions")
       .select("id, status, model, input, output, error_message, created_at")
       .eq("channel_id", channelId)
       .order("created_at", { ascending: false })
@@ -840,7 +840,7 @@ function KnowledgeManager({ channel }: { channel: Channel }) {
 
   async function load() {
     const { data, error } = await supabase
-      .from("ai_knowledge_items" as any)
+      .from("ai_knowledge_items")
       .select("id, title, content, is_active, created_at")
       .eq("company_id", channel.company_id)
       .order("created_at", { ascending: false })
@@ -854,7 +854,7 @@ function KnowledgeManager({ channel }: { channel: Channel }) {
   async function createItem() {
     if (!title.trim() || !content.trim()) { toast.error("Informe título e conteúdo."); return; }
     setSaving(true);
-    const { error } = await supabase.from("ai_knowledge_items" as any).insert({
+    const { error } = await supabase.from("ai_knowledge_items").insert({
       company_id: channel.company_id,
       channel_id: channel.id,
       title: title.trim(),
@@ -912,7 +912,7 @@ function TemplatesManager({ channel }: { channel: Channel }) {
   async function load() {
     setLoading(true);
     const { data, error } = await supabase
-      .from("whatsapp_templates" as any)
+      .from("whatsapp_templates")
       .select("id, name, language, category, status, last_synced_at")
       .eq("channel_id", channel.id)
       .order("name", { ascending: true });
@@ -1009,7 +1009,7 @@ function HealthChecksTable({ channelId }: { channelId: string }) {
   async function load() {
     setLoading(true);
     const { data, error } = await supabase
-      .from("integration_health_checks" as any)
+      .from("integration_health_checks")
       .select("id, check_type, status, latency_ms, error_message, created_at")
       .eq("channel_id", channelId)
       .order("created_at", { ascending: false })
