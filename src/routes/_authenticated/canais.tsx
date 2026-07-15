@@ -156,7 +156,7 @@ function CanaisPage() {
 
   async function loadQrChannel() {
     const { data } = await supabase
-      .from("channels" as any)
+      .from("channels")
       .select("*")
       .eq("type", "whatsapp")
       .eq("provider", "qr_code")
@@ -356,7 +356,7 @@ function QrAiSettings({ channelId }: { channelId: string }) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    supabase.from("channels" as any).select("ai_enabled, auto_reply_enabled").eq("id", channelId).maybeSingle()
+    supabase.from("channels").select("ai_enabled, auto_reply_enabled").eq("id", channelId).maybeSingle()
       .then(({ data }: any) => {
         if (data) { setAiEnabled(data.ai_enabled ?? false); setAutoReply(data.auto_reply_enabled ?? false); }
       });
@@ -364,7 +364,7 @@ function QrAiSettings({ channelId }: { channelId: string }) {
 
   async function save(field: "ai_enabled" | "auto_reply_enabled", value: boolean) {
     setSaving(true);
-    const { error } = await supabase.from("channels" as any).update({ [field]: value } as any).eq("id", channelId);
+    const { error } = await supabase.from("channels").update({ [field]: value } as any).eq("id", channelId);
     if (error) toast.error(error.message);
     else {
       if (field === "ai_enabled") setAiEnabled(value);
@@ -392,7 +392,7 @@ function QrAiSettings({ channelId }: { channelId: string }) {
         <ToggleRow
           title="Responder automaticamente com IA"
           description="Quando ativado, o Gemini responde cada mensagem recebida automaticamente."
-          checked={autoReply}
+          checked={autoReply ?? false}
           onCheckedChange={(v) => save("auto_reply_enabled", v)}
         />
         {saving && <p className="text-xs text-muted-foreground">Salvando...</p>}
@@ -858,7 +858,7 @@ function KnowledgeManager({ channel }: { channel: Channel }) {
   async function createItem() {
     if (!title.trim() || !content.trim()) { toast.error("Informe título e conteúdo."); return; }
     setSaving(true);
-    const { error } = await supabase.from("ai_knowledge_items" as any).insert({
+    const { error } = await supabase.from("ai_knowledge_items").insert({
       company_id: channel.company_id,
       channel_id: channel.id,
       title: title.trim(),

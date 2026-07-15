@@ -14,6 +14,56 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_agent_settings: {
+        Row: {
+          agent_name: string
+          company_id: string
+          created_at: string
+          handoff_keywords: string[]
+          id: string
+          is_enabled: boolean
+          max_tokens: number
+          model: string
+          system_prompt: string
+          temperature: number
+          updated_at: string
+        }
+        Insert: {
+          agent_name?: string
+          company_id: string
+          created_at?: string
+          handoff_keywords?: string[]
+          id?: string
+          is_enabled?: boolean
+          max_tokens?: number
+          model?: string
+          system_prompt?: string
+          temperature?: number
+          updated_at?: string
+        }
+        Update: {
+          agent_name?: string
+          company_id?: string
+          created_at?: string
+          handoff_keywords?: string[]
+          id?: string
+          is_enabled?: boolean
+          max_tokens?: number
+          model?: string
+          system_prompt?: string
+          temperature?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_agent_settings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_interactions: {
         Row: {
           channel_id: string | null
@@ -159,6 +209,63 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      appointments: {
+        Row: {
+          company_id: string
+          contact_id: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          ends_at: string | null
+          id: string
+          starts_at: string
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          contact_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          ends_at?: string | null
+          id?: string
+          starts_at: string
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          contact_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          ends_at?: string | null
+          id?: string
+          starts_at?: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointments_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointments_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
             referencedColumns: ["id"]
           },
         ]
@@ -458,6 +565,7 @@ export type Database = {
           created_at: string
           email: string | null
           id: string
+          is_active: boolean
           name: string
           owner_id: string
           phone: string | null
@@ -473,6 +581,7 @@ export type Database = {
           created_at?: string
           email?: string | null
           id?: string
+          is_active?: boolean
           name: string
           owner_id: string
           phone?: string | null
@@ -488,6 +597,7 @@ export type Database = {
           created_at?: string
           email?: string | null
           id?: string
+          is_active?: boolean
           name?: string
           owner_id?: string
           phone?: string | null
@@ -995,6 +1105,21 @@ export type Database = {
           },
         ]
       }
+      platform_admins: {
+        Row: {
+          created_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           company_id: string | null
@@ -1388,6 +1513,43 @@ export type Database = {
       }
     }
     Functions: {
+      admin_company_overview: {
+        Args: never
+        Returns: {
+          ai_enabled: boolean
+          appointments_count: number
+          contact_name: string | null
+          contacts_count: number
+          conversations_count: number
+          created_at: string
+          email: string | null
+          has_prompt: boolean
+          id: string
+          is_active: boolean
+          knowledge_count: number
+          name: string
+          phone: string | null
+          plan: string
+          segment: string | null
+          whatsapp_phone: string | null
+          whatsapp_status: string | null
+        }[]
+      }
+      admin_create_company: {
+        Args: {
+          _contact_name?: string | null
+          _email?: string | null
+          _name: string
+          _phone?: string | null
+          _plan?: string | null
+          _segment?: string | null
+        }
+        Returns: string
+      }
+      admin_enter_company: {
+        Args: { _company_id: string }
+        Returns: undefined
+      }
       get_user_company_id: { Args: never; Returns: string }
       has_role: {
         Args: {
@@ -1396,6 +1558,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_super_admin: { Args: never; Returns: boolean }
       seed_company_defaults: {
         Args: { _company_id: string }
         Returns: undefined

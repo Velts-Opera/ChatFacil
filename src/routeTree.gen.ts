@@ -20,6 +20,9 @@ import { Route as AuthenticatedDashboardRouteImport } from './routes/_authentica
 import { Route as AuthenticatedContatosRouteImport } from './routes/_authenticated/contatos'
 import { Route as AuthenticatedConfiguracoesRouteImport } from './routes/_authenticated/configuracoes'
 import { Route as AuthenticatedCanaisRouteImport } from './routes/_authenticated/canais'
+import { Route as AuthenticatedAgenteIaRouteImport } from './routes/_authenticated/agente-ia'
+import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated/agenda'
+import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
@@ -77,11 +80,29 @@ const AuthenticatedCanaisRoute = AuthenticatedCanaisRouteImport.update({
   path: '/canais',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAgenteIaRoute = AuthenticatedAgenteIaRouteImport.update({
+  id: '/agente-ia',
+  path: '/agente-ia',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAgendaRoute = AuthenticatedAgendaRouteImport.update({
+  id: '/agenda',
+  path: '/agenda',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/admin': typeof AuthenticatedAdminRoute
+  '/agenda': typeof AuthenticatedAgendaRoute
+  '/agente-ia': typeof AuthenticatedAgenteIaRoute
   '/canais': typeof AuthenticatedCanaisRoute
   '/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/contatos': typeof AuthenticatedContatosRoute
@@ -94,6 +115,9 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/admin': typeof AuthenticatedAdminRoute
+  '/agenda': typeof AuthenticatedAgendaRoute
+  '/agente-ia': typeof AuthenticatedAgenteIaRoute
   '/canais': typeof AuthenticatedCanaisRoute
   '/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/contatos': typeof AuthenticatedContatosRoute
@@ -108,6 +132,9 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/_authenticated/admin': typeof AuthenticatedAdminRoute
+  '/_authenticated/agenda': typeof AuthenticatedAgendaRoute
+  '/_authenticated/agente-ia': typeof AuthenticatedAgenteIaRoute
   '/_authenticated/canais': typeof AuthenticatedCanaisRoute
   '/_authenticated/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/_authenticated/contatos': typeof AuthenticatedContatosRoute
@@ -122,6 +149,9 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/reset-password'
+    | '/admin'
+    | '/agenda'
+    | '/agente-ia'
     | '/canais'
     | '/configuracoes'
     | '/contatos'
@@ -134,6 +164,9 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/reset-password'
+    | '/admin'
+    | '/agenda'
+    | '/agente-ia'
     | '/canais'
     | '/configuracoes'
     | '/contatos'
@@ -147,6 +180,9 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/auth'
     | '/reset-password'
+    | '/_authenticated/admin'
+    | '/_authenticated/agenda'
+    | '/_authenticated/agente-ia'
     | '/_authenticated/canais'
     | '/_authenticated/configuracoes'
     | '/_authenticated/contatos'
@@ -243,10 +279,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCanaisRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/agente-ia': {
+      id: '/_authenticated/agente-ia'
+      path: '/agente-ia'
+      fullPath: '/agente-ia'
+      preLoaderRoute: typeof AuthenticatedAgenteIaRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/agenda': {
+      id: '/_authenticated/agenda'
+      path: '/agenda'
+      fullPath: '/agenda'
+      preLoaderRoute: typeof AuthenticatedAgendaRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/admin': {
+      id: '/_authenticated/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AuthenticatedAdminRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
+  AuthenticatedAgendaRoute: typeof AuthenticatedAgendaRoute
+  AuthenticatedAgenteIaRoute: typeof AuthenticatedAgenteIaRoute
   AuthenticatedCanaisRoute: typeof AuthenticatedCanaisRoute
   AuthenticatedConfiguracoesRoute: typeof AuthenticatedConfiguracoesRoute
   AuthenticatedContatosRoute: typeof AuthenticatedContatosRoute
@@ -256,6 +316,9 @@ interface AuthenticatedRouteRouteChildren {
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAdminRoute: AuthenticatedAdminRoute,
+  AuthenticatedAgendaRoute: AuthenticatedAgendaRoute,
+  AuthenticatedAgenteIaRoute: AuthenticatedAgenteIaRoute,
   AuthenticatedCanaisRoute: AuthenticatedCanaisRoute,
   AuthenticatedConfiguracoesRoute: AuthenticatedConfiguracoesRoute,
   AuthenticatedContatosRoute: AuthenticatedContatosRoute,
