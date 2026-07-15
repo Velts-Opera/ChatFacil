@@ -121,20 +121,57 @@ Deno.serve(async (req) => {
 
       // ── Regras keyword (antes da IA) ────────────────────────────────────────
       const { data: keywordRules } = await admin
-        .from("keyword_rules")
-        .select("keyword, response")
-        .eq("channel_id", channelId)
+        .from("automation_rules")
+        .select("keyword, response, assign_to_human")
+        .eq("company_id", channel.company_id)
+        .eq("trigger_type", "keyword")
         .eq("is_active", true);
 
       if (keywordRules?.length) {
         const lowerContent = content.toLowerCase();
         const matched = keywordRules.find((r: any) =>
-          lowerContent.includes(r.keyword.toLowerCase())
+          r.keyword && lowerContent.includes(r.keyword.toLowerCase())
         );
-        if (matched) {
+        if (matched?.response) {
           await saveOutbound(admin, channel, conversationId, contactId, matched.response, "agent");
+          if (matched.assign_to_human) {
+            await admin.from("conversations").update({
+              ai_handling: false,
+              status: "pendente",
+              handoff_reason: "Regra solicitou humano",
+            }).eq("id", conversationId);
+          }
           return json({ ok: true, reply: matched.response, to: replyTo });
         }
+      }
+
+      // ── Agente IA exclusivo da empresa (prompt, ativação e handoff) ─────────
+      const { data: agentSettings } = await admin
+        .from("ai_agent_settings")
+        .select("is_enabled, agent_name, system_prompt, temperature, max_tokens, handoff_keywords")
+        .eq("company_id", channel.company_id)
+        .maybeSingle();
+
+      if (agentSettings && !agentSettings.is_enabled) {
+        await admin.from("conversations").update({
+          ai_handling: false,
+          status: "pendente",
+          handoff_reason: "Agente IA desativado para esta empresa",
+        }).eq("id", conversationId);
+        return json({ ok: true });
+      }
+
+      const lowerForHandoff = content.toLowerCase();
+      const handoffHit = (agentSettings?.handoff_keywords ?? []).find(
+        (k: string) => k && lowerForHandoff.includes(k.toLowerCase()),
+      );
+      if (handoffHit) {
+        await admin.from("conversations").update({
+          ai_handling: false,
+          status: "pendente",
+          handoff_reason: `Cliente pediu atendimento humano ("${handoffHit}")`,
+        }).eq("id", conversationId);
+        return json({ ok: true });
       }
 
       // ── Resposta automática com Gemini ──────────────────────────────────────
@@ -155,6 +192,10 @@ Deno.serve(async (req) => {
           userMessage: content,
           businessHours: channel.business_hours,
           greetingMessage: channel.greeting_message,
+          agentName: agentSettings?.agent_name ?? null,
+          customPrompt: agentSettings?.system_prompt ?? null,
+          temperature: agentSettings?.temperature ?? null,
+          maxTokens: agentSettings?.max_tokens ?? null,
         }, geminiKey);
 
         console.log(`[AI] resposta gerada: ${aiReply ? aiReply.slice(0, 80) : "null"}`);
@@ -220,6 +261,10 @@ async function generateGeminiReply(
     userMessage: string;
     businessHours: string | null;
     greetingMessage: string | null;
+    agentName: string | null;
+    customPrompt: string | null;
+    temperature: number | null;
+    maxTokens: number | null;
   },
   apiKey: string,
 ): Promise<string | null> {
@@ -267,8 +312,16 @@ async function generateGeminiReply(
     : "";
   const hours = ctx.businessHours ? `\n\nHorário de atendimento: ${ctx.businessHours}` : "";
 
+  const agentIdentity = ctx.agentName?.trim()
+    ? `Você é "${ctx.agentName.trim()}", assistente virtual de atendimento ao cliente da empresa "${companyName}".`
+    : `Você é o assistente virtual de atendimento ao cliente da empresa "${companyName}".`;
+
+  const customPrompt = ctx.customPrompt?.trim()
+    ? `\n\nInstruções exclusivas desta empresa (siga com prioridade máxima):\n${ctx.customPrompt.trim()}`
+    : "";
+
   const systemPrompt =
-    `Você é o assistente virtual de atendimento ao cliente da empresa "${companyName}".
+    `${agentIdentity}${customPrompt}
 
 Tom de comunicação: ${tone}. Seja sempre claro, objetivo e respeitoso.${services}${hours}
 
@@ -297,8 +350,8 @@ Regras obrigatórias:
       { role: "user", parts: [{ text: ctx.userMessage }] },
     ],
     generationConfig: {
-      temperature: 0.4,
-      maxOutputTokens: 400,
+      temperature: ctx.temperature ?? 0.4,
+      maxOutputTokens: ctx.maxTokens ?? 400,
     },
     safetySettings: [
       { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },

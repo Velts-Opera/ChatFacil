@@ -268,13 +268,31 @@ async function tryAutomationOrAiReply(
     return;
   }
 
+  // Agente IA exclusivo da empresa (prompt, ativação e handoff)
+  const { data: agentSettings } = await admin
+    .from("ai_agent_settings")
+    .select("is_enabled, agent_name, system_prompt, temperature, max_tokens, handoff_keywords")
+    .eq("company_id", channel.company_id)
+    .maybeSingle();
+
+  if (agentSettings && !agentSettings.is_enabled) {
+    await admin.from("conversations").update({ ai_handling: false, status: "pendente", handoff_reason: "Agente IA desativado para esta empresa" }).eq("id", conversationId);
+    return;
+  }
+
+  const handoffHit = (agentSettings?.handoff_keywords ?? []).find((k: string) => k && lower.includes(k.toLowerCase()));
+  if (handoffHit) {
+    await admin.from("conversations").update({ ai_handling: false, status: "pendente", handoff_reason: `Cliente pediu atendimento humano ("${handoffHit}")` }).eq("id", conversationId);
+    return;
+  }
+
   const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) {
     await admin.from("conversations").update({ ai_handling: false, status: "pendente", handoff_reason: "OPENAI_API_KEY ausente" }).eq("id", conversationId);
     return;
   }
 
-  const reply = await generateAiReply(admin, channel, conversationId, userMessage, apiKey, inboundMessageId);
+  const reply = await generateAiReply(admin, channel, conversationId, userMessage, apiKey, inboundMessageId, agentSettings);
   if (!reply) {
     await admin.from("conversations").update({ ai_handling: false, status: "pendente", handoff_reason: "IA não respondeu com segurança" }).eq("id", conversationId);
     return;
@@ -283,7 +301,7 @@ async function tryAutomationOrAiReply(
   await sendBotReply(admin, channel, conversationId, contactId, waId, inboundMessageId, reply, "ai", rawValue);
 }
 
-async function generateAiReply(admin: any, channel: any, conversationId: string, userMessage: string, apiKey: string, inboundMessageId: string) {
+async function generateAiReply(admin: any, channel: any, conversationId: string, userMessage: string, apiKey: string, inboundMessageId: string, agentSettings: any = null) {
   const [{ data: company }, { data: quickReplies }, { data: knowledge }, { data: history }] = await Promise.all([
     admin.from("companies").select("name, segment, business_hours, services_description, communication_tone").eq("id", channel.company_id).maybeSingle(),
     admin.from("quick_replies").select("title, message, category").eq("company_id", channel.company_id).limit(20),
@@ -291,8 +309,14 @@ async function generateAiReply(admin: any, channel: any, conversationId: string,
     admin.from("messages").select("direction, content, created_at").eq("conversation_id", conversationId).order("created_at", { ascending: false }).limit(8),
   ]);
 
+  const agentName = agentSettings?.agent_name?.trim();
+  const customPrompt = agentSettings?.system_prompt?.trim();
+
   const system = [
-    `Você é a IA de atendimento da empresa ${company?.name ?? "do cliente"}.`,
+    agentName
+      ? `Você é "${agentName}", a IA de atendimento da empresa ${company?.name ?? "do cliente"}.`
+      : `Você é a IA de atendimento da empresa ${company?.name ?? "do cliente"}.`,
+    ...(customPrompt ? [`\nInstruções exclusivas desta empresa (siga com prioridade máxima):\n${customPrompt}\n`] : []),
     "Responda em português do Brasil, de forma objetiva, educada e comercial.",
     "Use somente as informações cadastradas abaixo. Não invente preço, prazo, endereço ou política.",
     "Se não souber responder, diga: 'Vou chamar uma pessoa da equipe para confirmar isso com você.'",
@@ -316,7 +340,12 @@ async function generateAiReply(admin: any, channel: any, conversationId: string,
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, temperature: 0.2, max_tokens: 320, messages }),
+    body: JSON.stringify({
+      model,
+      temperature: agentSettings?.temperature ?? 0.2,
+      max_tokens: agentSettings?.max_tokens ?? 320,
+      messages,
+    }),
   });
 
   const out = await res.json().catch(() => ({}));
