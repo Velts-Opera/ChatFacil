@@ -4,7 +4,7 @@ export class QrCodeProvider implements WhatsAppProvider {
   private bridgeUrl: string;
   private channelId: string;
 
-  constructor(channelId: string, bridgeUrl = "http://localhost:3001") {
+  constructor(channelId: string, bridgeUrl = "http://127.0.0.1:3001") {
     this.channelId = channelId;
     this.bridgeUrl = bridgeUrl.replace(/\/$/, "");
   }

@@ -22,3 +22,6 @@ verify_jwt = true
 
 [functions.whatsapp-qr-event]
 verify_jwt = false
+
+[functions.whatsapp-embedded-signup]
+verify_jwt = false

@@ -7,7 +7,8 @@ Este pacote entrega a versão endurecida do Comunica AI / ChatFácil AI para ope
 - Frontend React/TanStack pronto para Lovable/Vercel/Railway/Vite.
 - Supabase Auth + RLS por empresa.
 - Banco multiempresa com contatos, conversas, mensagens, canais, eventos, IA, templates, auditoria e health checks.
-- Conexão real com WhatsApp Cloud API por `Phone Number ID`, `WABA ID`, `Access Token`, `Verify Token` e `App Secret`.
+- Conexão real com WhatsApp Cloud API pelo Meta Embedded Signup, com QR de onboarding temporário e alternativa manual por `Phone Number ID`, `WABA ID`, `Access Token`, `Verify Token` e `App Secret`.
+- Sessões de onboarding isoladas por empresa, token de uso único armazenado somente como hash SHA-256 e expiração automática.
 - Credenciais salvas em tabela service-role only e criptografadas pela Edge Function usando `APP_ENCRYPTION_KEY`.
 - Webhook real com verificação `GET`, recebimento `POST`, assinatura HMAC `x-hub-signature-256` quando App Secret existir, idempotência por `meta_message_id` e persistência do payload.
 - Inbox real: contatos, conversas e mensagens vindas do banco.
@@ -19,12 +20,12 @@ Este pacote entrega a versão endurecida do Comunica AI / ChatFácil AI para ope
 - Health check real contra API da Meta.
 - Auditoria de conexão, desconexão, sync de templates e envio de templates.
 
-## O que não existe mais como dependência
+## Separação entre os dois tipos de QR
 
 - Não usa n8n.
 - Não usa Make.
-- Não usa QR Code.
-- Não usa WhatsApp Web não oficial.
+- O QR oficial apenas abre `/onboarding/:token`; a autorização acontece no Embedded Signup da Meta e cria um canal `meta_cloud_api`.
+- O bridge Baileys/WhatsApp Web permanece apenas como opção local legada, com provider `qr_code`, processo e credenciais separados. Ele não é usado pelo Embedded Signup e não oferece Calling API.
 - Não depende de dados mockados para WhatsApp, webhook, inbox, eventos, mensagens ou IA.
 
 ## Variáveis do frontend
@@ -47,7 +48,11 @@ Obrigatórios para produção:
 supabase secrets set APP_ENCRYPTION_KEY="gere-uma-chave-forte-com-mais-de-32-caracteres"
 supabase secrets set OPENAI_API_KEY="sk-..."
 supabase secrets set OPENAI_MODEL="gpt-4o-mini"
-supabase secrets set META_GRAPH_VERSION="v20.0"
+supabase secrets set META_GRAPH_VERSION="v25.0"
+supabase secrets set META_APP_ID="..."
+supabase secrets set META_APP_SECRET="..."
+supabase secrets set META_EMBEDDED_SIGNUP_CONFIG_ID="..."
+supabase secrets set META_WEBHOOK_VERIFY_TOKEN="gere-um-token-forte"
 ```
 
 `APP_ENCRYPTION_KEY` é obrigatória para novas conexões porque o token da Meta é criptografado antes de salvar.
@@ -69,6 +74,7 @@ supabase functions deploy whatsapp-sync-templates
 supabase functions deploy whatsapp-send-template
 supabase functions deploy whatsapp-disconnect-channel
 supabase functions deploy whatsapp-health-check
+supabase functions deploy whatsapp-embedded-signup --no-verify-jwt
 ```
 
 ## Configurar webhook na Meta
@@ -80,7 +86,8 @@ Callback URL:
 https://SEU-PROJETO.supabase.co/functions/v1/whatsapp-webhook
 
 Verify Token:
-Use exatamente o token gerado/salvo em Canais > WhatsApp.
+No Embedded Signup, use o mesmo valor de META_WEBHOOK_VERIFY_TOKEN.
+Na configuração manual, use exatamente o token salvo em Canais > WhatsApp.
 
 Webhook Field:
 messages
@@ -115,11 +122,17 @@ Atualiza Inbox, eventos, IA e métricas
 3. Publique todas as Edge Functions.
 4. Faça login no app.
 5. Vá em `Canais > WhatsApp`.
-6. Informe Access Token, WABA ID, Phone Number ID, Verify Token e App Secret.
-7. Clique em `Conectar e testar API real`.
-8. Copie a Callback URL e configure na Meta.
+6. Gere o QR de onboarding e abra o link como responsável da conta Meta.
+7. Clique em `Conectar WhatsApp` e conclua o Embedded Signup oficial.
+8. Confirme que o canal aparece como conectado; a configuração manual continua disponível como contingência.
 9. Envie mensagem real para o número.
 10. Acompanhe em Inbox, Eventos, Últimas mensagens, Processos da IA e Health Check.
+
+## Limites atuais
+
+- Texto pela Cloud API, base de conhecimento e handoff humano estão implementados.
+- Download e transcrição de áudio recebido, resposta em áudio pela ElevenLabs, agenda e Calling API ainda não estão implementados.
+- A Meta exige app configurado, HTTPS, permissões e aprovações adequadas para liberar o Embedded Signup a empresas externas.
 
 ## Observação comercial importante
 

@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { WhatsAppQrConnect } from "@/components/whatsapp-qr-connect";
+import { MetaOnboardingLink } from "@/components/meta-embedded-signup";
 import type { ConnectionStatus } from "@/lib/whatsapp/provider";
 
 export const Route = createFileRoute("/_authenticated/canais")({
@@ -139,6 +140,7 @@ function CanaisPage() {
       .from("channel_public_view" as any)
       .select("*")
       .eq("type", "whatsapp")
+      .eq("provider", "meta_cloud_api")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -194,8 +196,8 @@ function CanaisPage() {
         />
         <ChannelCard
           icon={<QrCode className="h-5 w-5" />}
-          name="WhatsApp QR Code"
-          description="Conecte via QR Code, sem API oficial."
+          name="WhatsApp Web (QR legado)"
+          description="Sessão local; não é Cloud API nem Calling API."
           status={(qrChannel?.status as ChannelStatus) ?? "disconnected"}
           onClick={() => setSelected("whatsapp-qr")}
         />
@@ -217,7 +219,7 @@ function WhatsAppQrPanel({
   onBack: () => void;
   onChanged: () => void | Promise<void>;
 }) {
-  const BRIDGE_URL = import.meta.env.VITE_WA_BRIDGE_URL as string | undefined ?? "http://localhost:3001";
+  const BRIDGE_URL = import.meta.env.VITE_WA_BRIDGE_URL as string | undefined ?? "http://127.0.0.1:3001";
   const [saving, setSaving] = useState(false);
   const [channelId, setChannelId] = useState<string | null>(channel?.id ?? null);
   const [currentStatus, setCurrentStatus] = useState<ConnectionStatus>((channel?.status as ConnectionStatus) ?? "disconnected");
@@ -297,8 +299,8 @@ function WhatsAppQrPanel({
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">WhatsApp via QR Code</h1>
-          <p className="text-sm text-muted-foreground">Conecte sem precisar da API oficial da Meta.</p>
+          <h1 className="text-xl font-semibold tracking-tight">WhatsApp Web via QR (legado)</h1>
+          <p className="text-sm text-muted-foreground">Sessão local separada do onboarding oficial da Meta e sem suporte à Calling API.</p>
         </div>
       </div>
 
@@ -372,7 +374,7 @@ function QrAiSettings({ channelId }: { channelId: string }) {
     setSaving(false);
   }
 
-  if (aiEnabled === null) return null;
+  if (aiEnabled === null || autoReply === null) return null;
 
   return (
     <div className="rounded-xl border bg-card p-6 shadow-sm">
@@ -397,7 +399,7 @@ function QrAiSettings({ channelId }: { channelId: string }) {
         {autoReply && (
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
             Configure a base de conhecimento na seção abaixo para que a IA responda com precisão.
-            Certifique-se de que o secret <strong>GEMINI_API_KEY</strong> está configurado no Supabase.
+            Certifique-se de que <strong>GEMINI_API_KEY</strong> e <strong>SUPABASE_SERVICE_ROLE_KEY</strong> estão configurados no <code>server/.env</code> do servidor-mãe.
           </p>
         )}
       </div>
@@ -561,12 +563,14 @@ function WhatsAppPanel({ channel, loading, onBack, onChanged }: {
         <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="mr-1 h-4 w-4" />Voltar</Button>
         <div className="flex-1">
           <h1 className="text-2xl font-semibold tracking-tight">Conectar WhatsApp</h1>
-          <p className="text-sm text-muted-foreground">Cloud API oficial: Phone Number ID, WABA ID, Access Token e webhook. Nada de QR Code ou n8n.</p>
+          <p className="text-sm text-muted-foreground">Cloud API oficial por Embedded Signup ou configuração manual de credenciais.</p>
         </div>
         <StatusBadge status={status} />
       </div>
 
       {loading && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Carregando…</div>}
+
+      <MetaOnboardingLink onComplete={onChanged} />
 
       {status === "error" && channel?.last_error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
@@ -580,7 +584,7 @@ function WhatsAppPanel({ channel, loading, onBack, onChanged }: {
         <section className="rounded-xl border bg-card p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-primary" />
-            <h2 className="font-medium">Credenciais oficiais da Meta</h2>
+            <h2 className="font-medium">Configuração manual (alternativa)</h2>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Nome do canal"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Atendimento principal" /></Field>
@@ -804,7 +808,7 @@ function AiInteractionsTable({ channelId }: { channelId: string }) {
   async function load() {
     setLoading(true);
     const { data, error } = await supabase
-      .from("ai_interactions" as any)
+      .from("ai_interactions")
       .select("id, status, model, input, output, error_message, created_at")
       .eq("channel_id", channelId)
       .order("created_at", { ascending: false })
@@ -840,7 +844,7 @@ function KnowledgeManager({ channel }: { channel: Channel }) {
 
   async function load() {
     const { data, error } = await supabase
-      .from("ai_knowledge_items" as any)
+      .from("ai_knowledge_items")
       .select("id, title, content, is_active, created_at")
       .eq("company_id", channel.company_id)
       .order("created_at", { ascending: false })
@@ -912,7 +916,7 @@ function TemplatesManager({ channel }: { channel: Channel }) {
   async function load() {
     setLoading(true);
     const { data, error } = await supabase
-      .from("whatsapp_templates" as any)
+      .from("whatsapp_templates")
       .select("id, name, language, category, status, last_synced_at")
       .eq("channel_id", channel.id)
       .order("name", { ascending: true });
@@ -1009,7 +1013,7 @@ function HealthChecksTable({ channelId }: { channelId: string }) {
   async function load() {
     setLoading(true);
     const { data, error } = await supabase
-      .from("integration_health_checks" as any)
+      .from("integration_health_checks")
       .select("id, check_type, status, latency_ms, error_message, created_at")
       .eq("channel_id", channelId)
       .order("created_at", { ascending: false })

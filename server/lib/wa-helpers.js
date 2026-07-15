@@ -13,3 +13,19 @@ export function toJid(to) {
   if (to.includes('@')) return to;
   return `${to.replace(/\D/g, '')}@s.whatsapp.net`;
 }
+
+const AUTH_RESET_REASONS = new Set([
+  401, // loggedOut
+  403, // forbidden
+  411, // multideviceMismatch
+  440, // connectionReplaced
+  500, // badSession
+]);
+
+export function hasStaleUnregisteredCredentials(creds) {
+  return creds?.registered === false && Boolean(creds?.me?.id);
+}
+
+export function shouldResetAuth(reason) {
+  return AUTH_RESET_REASONS.has(reason);
+}

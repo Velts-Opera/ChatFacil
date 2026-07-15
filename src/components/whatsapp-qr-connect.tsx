@@ -80,15 +80,23 @@ export function WhatsAppQrConnect({ channelId, bridgeUrl, initialStatus, onConne
     poll();
   }, [poll, stopPoll]);
 
-  // Verifica se o bridge está online ao montar
+  // Verifica o bridge continuamente para recuperar após ele ser iniciado
   useEffect(() => {
     let cancelled = false;
-    const url = (bridgeUrl ?? "http://localhost:3001").replace(/\/$/, "");
-    fetch(`${url}/health`, { signal: AbortSignal.timeout(3000) })
+    const url = (bridgeUrl ?? "http://127.0.0.1:3001").replace(/\/$/, "");
+    const check = () => fetch(`${url}/health`, { signal: AbortSignal.timeout(3000) })
       .then((r) => { if (!cancelled) setBridgeOnline(r.ok); })
       .catch(() => { if (!cancelled) setBridgeOnline(false); });
-    return () => { cancelled = true; };
+    check();
+    const timer = setInterval(check, 4000);
+    return () => { cancelled = true; clearInterval(timer); };
   }, [bridgeUrl]);
+
+  useEffect(() => {
+    if (bridgeOnline && (status === "qr_pending" || status === "reconnecting") && !pollRef.current) {
+      startPoll();
+    }
+  }, [bridgeOnline, status, startPoll]);
 
   // Se já estava conectado, inicia polling para detectar desconexão
   useEffect(() => {
@@ -106,6 +114,7 @@ export function WhatsAppQrConnect({ channelId, bridgeUrl, initialStatus, onConne
       startPoll();
     } catch (err) {
       setStatus("error");
+      setBridgeOnline(false);
     } finally {
       setLoading(false);
     }

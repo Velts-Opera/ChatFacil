@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractText, toJid } from '../lib/wa-helpers.js';
+import {
+  extractText,
+  hasStaleUnregisteredCredentials,
+  shouldResetAuth,
+  toJid,
+} from '../lib/wa-helpers.js';
 
 // ── extractText ──────────────────────────────────────────────────────────────
 
@@ -56,4 +61,28 @@ test('toJid: JID @lid é preservado sem alteração', () => {
 
 test('toJid: JID @g.us é preservado sem alteração', () => {
   assert.equal(toJid('123456789@g.us'), '123456789@g.us');
+});
+
+test('hasStaleUnregisteredCredentials: detects stale partial credentials', () => {
+  assert.equal(hasStaleUnregisteredCredentials({ registered: false, me: { id: '5511999999999:1@s.whatsapp.net' } }), true);
+});
+
+test('hasStaleUnregisteredCredentials: keeps a fresh unregistered state', () => {
+  assert.equal(hasStaleUnregisteredCredentials({ registered: false }), false);
+});
+
+test('hasStaleUnregisteredCredentials: keeps a registered state', () => {
+  assert.equal(hasStaleUnregisteredCredentials({ registered: true, me: { id: '5511999999999:1@s.whatsapp.net' } }), false);
+});
+
+test('shouldResetAuth: resets invalid authentication reasons', () => {
+  for (const reason of [401, 403, 411, 440, 500]) {
+    assert.equal(shouldResetAuth(reason), true);
+  }
+});
+
+test('shouldResetAuth: preserves credentials for transient failures', () => {
+  for (const reason of [408, 428, 503, 515, undefined]) {
+    assert.equal(shouldResetAuth(reason), false);
+  }
 });

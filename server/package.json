@@ -5,11 +5,12 @@
   "description": "Bridge WhatsApp QR Code para o ChatFacil",
   "scripts": {
     "start": "node whatsapp-bridge.js",
-    "dev": "node --watch whatsapp-bridge.js"
+    "dev": "node --watch whatsapp-bridge.js",
+    "test": "node --test"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
-    "@whiskeysockets/baileys": "^6.7.16",
+    "@whiskeysockets/baileys": "7.0.0-rc13",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",

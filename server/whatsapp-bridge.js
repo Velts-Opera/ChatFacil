@@ -10,22 +10,49 @@ import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import { makeWASocket, DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import qrcode from 'qrcode';
 import pino from 'pino';
-import { extractText, toJid } from './lib/wa-helpers.js';
+import {
+  extractText,
+  hasStaleUnregisteredCredentials,
+  shouldResetAuth,
+  toJid,
+} from './lib/wa-helpers.js';
+import { createTenantAgent } from './lib/tenant-agent.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
+const BRIDGE_HOST = process.env.BRIDGE_HOST ?? '127.0.0.1';
 const SUPABASE_URL = process.env.SUPABASE_URL ?? '';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? '';
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-1.5-flash';
 const BRIDGE_SECRET = process.env.BRIDGE_SECRET ?? '';
+const QR_EVENT_MODE = process.env.QR_EVENT_MODE ?? 'direct';
 const SESSIONS_DIR = path.resolve(__dirname, process.env.SESSIONS_DIR ?? './sessions');
+const BAILEYS_VERSION_URL = 'https://raw.githubusercontent.com/WhiskeySockets/Baileys/master/src/Defaults/baileys-version.json';
 
 const logger = pino({ level: 'info' });
+const tenantAgent = createTenantAgent({
+  supabaseUrl: SUPABASE_URL,
+  serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
+  geminiApiKey: GEMINI_API_KEY,
+  model: GEMINI_MODEL,
+  logger,
+});
 
 /** @type {Map<string, Session>} */
 const sessions = new Map();
+
+function isLoopbackHost(host) {
+  return host === '127.0.0.1' || host === 'localhost' || host === '::1';
+}
+
+if (!isLoopbackHost(BRIDGE_HOST) && !BRIDGE_SECRET) {
+  throw new Error('BRIDGE_SECRET é obrigatório quando BRIDGE_HOST não é local');
+}
 
 /**
  * @typedef {Object} Session
@@ -35,8 +62,10 @@ const sessions = new Map();
  * @property {string|null} phoneNumber    - número conectado
  * @property {any} socket                 - instância Baileys
  * @property {NodeJS.Timeout|null} sendTimer
+ * @property {NodeJS.Timeout|null} reconnectTimer
  * @property {Array<{to:string,message:string,resolve:Function,reject:Function}>} sendQueue
  * @property {boolean} sendBusy
+ * @property {boolean} stopped
  */
 
 function sessionDir(channelId) {
@@ -45,6 +74,20 @@ function sessionDir(channelId) {
 
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
+async function fetchBaileysVersion() {
+  const response = await fetch(BAILEYS_VERSION_URL, {
+    headers: { accept: 'application/json' },
+  });
+  if (!response.ok) {
+    throw new Error(`Baileys version request failed with HTTP ${response.status}`);
+  }
+  const payload = await response.json();
+  if (!Array.isArray(payload?.version) || payload.version.length !== 3) {
+    throw new Error('Baileys version response is invalid');
+  }
+  return payload.version;
 }
 
 /** Notifica Supabase sobre eventos da sessão e retorna o JSON de resposta */
@@ -74,12 +117,21 @@ async function notifySupabase(event, payload) {
   }
 }
 
+async function persistChannelStatus(channelId, values) {
+  if (!tenantAgent.describe().hasSupabaseKey) return;
+  try {
+    await tenantAgent.updateChannel(channelId, values);
+  } catch (err) {
+    logger.warn({ err, channelId }, '[bridge] Não foi possível persistir status do canal');
+  }
+}
+
 /** Inicia ou reconecta uma sessão Baileys */
 async function startSession(channelId) {
   if (sessions.has(channelId)) {
     const existing = sessions.get(channelId);
     if (existing.status === 'connected') return existing;
-    await stopSession(channelId, false);
+    await stopSession(channelId, { notify: false });
   }
 
   const dir = sessionDir(channelId);
@@ -95,11 +147,21 @@ async function startSession(channelId) {
     sendQueue: [],
     sendBusy: false,
     sendTimer: null,
+    reconnectTimer: null,
+    stopped: false,
   };
   sessions.set(channelId, session);
 
-  const { state, saveCreds } = await useMultiFileAuthState(dir);
-  const { version } = await fetchLatestBaileysVersion();
+  let authState = await useMultiFileAuthState(dir);
+  if (hasStaleUnregisteredCredentials(authState.state.creds)) {
+    logger.warn({ channelId }, '[bridge] Credenciais incompletas detectadas; gerando uma nova sessão QR');
+    fs.rmSync(dir, { recursive: true, force: true });
+    ensureDir(dir);
+    authState = await useMultiFileAuthState(dir);
+  }
+
+  const { state, saveCreds } = authState;
+  const version = await fetchBaileysVersion();
 
   const sock = makeWASocket({
     version,
@@ -132,27 +194,47 @@ async function startSession(channelId) {
       const jid = sock.user?.id ?? '';
       session.phoneNumber = jid.replace(/:\d+@.*/, '').replace('@s.whatsapp.net', '');
       logger.info({ channelId, phone: session.phoneNumber }, '[bridge] Conectado');
-      await notifySupabase('connected', {
-        channelId,
-        phoneNumber: session.phoneNumber,
+      await persistChannelStatus(channelId, {
+        status: 'connected',
+        phone_number: session.phoneNumber,
+        connected_at: new Date().toISOString(),
+        last_error: null,
       });
+      if (QR_EVENT_MODE === 'webhook') {
+        await notifySupabase('connected', { channelId, phoneNumber: session.phoneNumber });
+      }
     }
 
     if (connection === 'close') {
       const reason = new Boom(lastDisconnect?.error).output?.statusCode;
-      const shouldReconnect = reason !== DisconnectReason.loggedOut;
+      const errorMessage = lastDisconnect?.error instanceof Error
+        ? lastDisconnect.error.message
+        : String(lastDisconnect?.error ?? 'unknown');
 
-      if (shouldReconnect) {
+      if (session.stopped || sessions.get(channelId) !== session) {
+        return;
+      }
+
+      if (!shouldResetAuth(reason)) {
         session.status = 'reconnecting';
-        logger.info({ channelId, reason }, '[bridge] Reconectando...');
-        await notifySupabase('reconnecting', { channelId });
-        setTimeout(() => startSession(channelId), 5000);
+        logger.info({ channelId, reason, errorMessage }, '[bridge] Reconectando...');
+        await persistChannelStatus(channelId, { status: 'connecting', last_error: errorMessage });
+        if (QR_EVENT_MODE === 'webhook') await notifySupabase('reconnecting', { channelId });
+        const delay = reason === DisconnectReason.restartRequired ? 250 : 5000;
+        session.reconnectTimer = setTimeout(() => {
+          session.reconnectTimer = null;
+          if (session.stopped || sessions.get(channelId) !== session) return;
+          startSession(channelId).catch((err) => {
+            logger.error({ err, channelId }, '[bridge] Falha ao reiniciar sessão');
+          });
+        }, delay);
       } else {
         session.status = 'disconnected';
-        logger.info({ channelId }, '[bridge] Sessão encerrada (logout)');
-        await notifySupabase('disconnected', { channelId, reason: 'logout' });
+        session.stopped = true;
+        logger.warn({ channelId, reason, errorMessage }, '[bridge] Sessão inválida; novo QR será necessário');
+        await persistChannelStatus(channelId, { status: 'disconnected', last_error: errorMessage });
+        if (QR_EVENT_MODE === 'webhook') await notifySupabase('disconnected', { channelId, reason: 'invalid_auth' });
         sessions.delete(channelId);
-        // Apaga estado de auth salvo para forçar novo QR
         fs.rmSync(dir, { recursive: true, force: true });
       }
     }
@@ -173,7 +255,7 @@ async function startSession(channelId) {
 
       logger.info({ channelId, from: waId, content }, '[bridge] Mensagem recebida');
 
-      const result = await notifySupabase('message_received', {
+      const messagePayload = {
         channelId,
         waId,
         rawJid: msg.key.remoteJid,
@@ -183,7 +265,19 @@ async function startSession(channelId) {
         timestamp: msg.messageTimestamp
           ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
           : new Date().toISOString(),
-      });
+      };
+      let result = null;
+      if (QR_EVENT_MODE === 'webhook') {
+        result = await notifySupabase('message_received', messagePayload);
+      } else if (tenantAgent.enabled) {
+        try {
+          result = await tenantAgent.processMessage(messagePayload);
+        } catch (err) {
+          logger.error({ err, channelId, from: waId }, '[bridge] Roteamento direto da IA falhou');
+        }
+      } else {
+        logger.warn({ channelId }, '[bridge] Persistência direta desabilitada: configure SUPABASE_SERVICE_ROLE_KEY');
+      }
 
       if (result?.reply) {
         const replyTo = toJid(result.to ?? from);
@@ -201,17 +295,24 @@ async function startSession(channelId) {
 }
 
 /** Para e remove uma sessão */
-async function stopSession(channelId, notify = true) {
+async function stopSession(channelId, { notify = true, clearAuth = false } = {}) {
   const session = sessions.get(channelId);
-  if (!session) return;
-  try {
+  if (session) {
+    session.stopped = true;
+    session.status = 'disconnected';
     if (session.sendTimer) clearTimeout(session.sendTimer);
-    session.socket?.end(undefined);
-  } catch {}
-  session.status = 'disconnected';
-  sessions.delete(channelId);
+    if (session.reconnectTimer) clearTimeout(session.reconnectTimer);
+    sessions.delete(channelId);
+    try {
+      session.socket?.end(undefined);
+    } catch {}
+  }
+  if (clearAuth) {
+    fs.rmSync(sessionDir(channelId), { recursive: true, force: true });
+  }
   if (notify) {
-    await notifySupabase('disconnected', { channelId, reason: 'user_request' });
+    await persistChannelStatus(channelId, { status: 'disconnected', last_error: null });
+    if (QR_EVENT_MODE === 'webhook') await notifySupabase('disconnected', { channelId, reason: 'user_request' });
   }
 }
 
@@ -252,8 +353,16 @@ app.use(cors({
 }));
 app.use(express.json());
 
+app.use('/session', (req, res, next) => {
+  if (isLoopbackHost(BRIDGE_HOST)) return next();
+  if (req.headers['x-bridge-secret'] !== BRIDGE_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  return next();
+});
+
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, sessions: sessions.size, uptime: process.uptime() });
+  res.json({ ok: true, sessions: sessions.size, uptime: process.uptime(), eventMode: QR_EVENT_MODE, tenantAgent: tenantAgent.describe() });
 });
 
 /** Inicia sessão para um canal */
@@ -324,13 +433,13 @@ app.post('/session/:channelId/send', async (req, res) => {
 /** Desconecta sessão */
 app.post('/session/:channelId/disconnect', async (req, res) => {
   const { channelId } = req.params;
-  await stopSession(channelId, true);
+  await stopSession(channelId, { clearAuth: true });
   res.json({ ok: true });
 });
 
 ensureDir(SESSIONS_DIR);
 
-app.listen(PORT, () => {
-  logger.info(`[bridge] ChatFacil WhatsApp Bridge rodando em http://localhost:${PORT}`);
+app.listen(PORT, BRIDGE_HOST, () => {
+  logger.info(`[bridge] ChatFacil WhatsApp Bridge rodando em http://${BRIDGE_HOST}:${PORT}`);
   logger.info(`[bridge] Supabase URL: ${SUPABASE_URL || '(não configurado)'}`);
 });

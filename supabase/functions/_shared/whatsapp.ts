@@ -2,7 +2,7 @@ import { cleanPhone } from "./http.ts";
 import { decryptSecret } from "./crypto.ts";
 
 export function graphBase() {
-  const version = Deno.env.get("META_GRAPH_VERSION") ?? "v20.0";
+  const version = Deno.env.get("META_GRAPH_VERSION") ?? "v25.0";
   return `https://graph.facebook.com/${version}`;
 }
 
