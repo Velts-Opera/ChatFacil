@@ -392,8 +392,21 @@ app.use(cors({
 }));
 app.use(express.json());
 
-app.use('/session', (req, res, next) => {
-  if (!bridgeSecret || req.headers['x-bridge-secret'] !== bridgeSecret) {
+// Se o segredo recebido não bate, tenta recarregar do banco (no máximo a cada
+// 30s) antes de recusar — cobre boot antes da tabela existir e rotação de segredo.
+let lastSecretReload = 0;
+async function verifyIncomingSecret(incoming) {
+  if (incoming && incoming === bridgeSecret) return true;
+  const now = Date.now();
+  if (now - lastSecretReload > 30_000) {
+    lastSecretReload = now;
+    await loadBridgeSecret();
+  }
+  return Boolean(incoming) && incoming === bridgeSecret;
+}
+
+app.use('/session', async (req, res, next) => {
+  if (!(await verifyIncomingSecret(req.headers['x-bridge-secret']))) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   return next();
@@ -445,7 +458,7 @@ app.get('/session/:channelId/status', (req, res) => {
 
 /** Envia mensagem */
 app.post('/session/:channelId/send', async (req, res) => {
-  if (!bridgeSecret || req.headers['x-bridge-secret'] !== bridgeSecret) {
+  if (!(await verifyIncomingSecret(req.headers['x-bridge-secret']))) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
