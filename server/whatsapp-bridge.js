@@ -24,14 +24,21 @@ import { createTenantAgent } from './lib/tenant-agent.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
-const BRIDGE_HOST = process.env.BRIDGE_HOST ?? '127.0.0.1';
+const BRIDGE_HOST = process.env.BRIDGE_HOST ?? '0.0.0.0';
 const SUPABASE_URL = process.env.SUPABASE_URL ?? '';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? '';
 const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-1.5-flash';
 const BRIDGE_SECRET = process.env.BRIDGE_SECRET ?? '';
-const QR_EVENT_MODE = process.env.QR_EVENT_MODE ?? 'direct';
-const SESSIONS_DIR = path.resolve(__dirname, process.env.SESSIONS_DIR ?? './sessions');
+const QR_EVENT_MODE = process.env.QR_EVENT_MODE ?? 'webhook';
+// SESSION_DATA_PATH é o nome preferido em produção; SESSIONS_DIR mantido por compatibilidade
+const SESSIONS_DIR = process.env.SESSION_DATA_PATH
+  ? path.resolve(process.env.SESSION_DATA_PATH)
+  : path.resolve(__dirname, process.env.SESSIONS_DIR ?? './sessions');
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
 const BAILEYS_VERSION_URL = 'https://raw.githubusercontent.com/WhiskeySockets/Baileys/master/src/Defaults/baileys-version.json';
 
 const logger = pino({ level: 'info' });
@@ -46,12 +53,8 @@ const tenantAgent = createTenantAgent({
 /** @type {Map<string, Session>} */
 const sessions = new Map();
 
-function isLoopbackHost(host) {
-  return host === '127.0.0.1' || host === 'localhost' || host === '::1';
-}
-
-if (!isLoopbackHost(BRIDGE_HOST) && !BRIDGE_SECRET) {
-  throw new Error('BRIDGE_SECRET é obrigatório quando BRIDGE_HOST não é local');
+if (!BRIDGE_SECRET) {
+  throw new Error('BRIDGE_SECRET é obrigatório. Defina a variável de ambiente BRIDGE_SECRET.');
 }
 
 /**
@@ -348,13 +351,12 @@ async function processSendQueue(session) {
 const app = express();
 
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'http://localhost:8080', 'http://127.0.0.1:8080'],
+  origin: ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : false,
   methods: ['GET', 'POST', 'OPTIONS'],
 }));
 app.use(express.json());
 
 app.use('/session', (req, res, next) => {
-  if (isLoopbackHost(BRIDGE_HOST)) return next();
   if (req.headers['x-bridge-secret'] !== BRIDGE_SECRET) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
@@ -439,7 +441,29 @@ app.post('/session/:channelId/disconnect', async (req, res) => {
 
 ensureDir(SESSIONS_DIR);
 
+/** Restaura sessões persistidas automaticamente ao iniciar */
+async function restoreSessions() {
+  let entries;
+  try {
+    entries = fs.readdirSync(SESSIONS_DIR, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  const dirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+  logger.info({ count: dirs.length }, '[bridge] Restaurando sessões persistidas');
+  for (const channelId of dirs) {
+    try {
+      await startSession(channelId);
+      logger.info({ channelId }, '[bridge] Sessão restaurada');
+    } catch (err) {
+      logger.warn({ err, channelId }, '[bridge] Falha ao restaurar sessão');
+    }
+  }
+}
+
 app.listen(PORT, BRIDGE_HOST, () => {
   logger.info(`[bridge] ChatFacil WhatsApp Bridge rodando em http://${BRIDGE_HOST}:${PORT}`);
   logger.info(`[bridge] Supabase URL: ${SUPABASE_URL || '(não configurado)'}`);
+  logger.info(`[bridge] Session data path: ${SESSIONS_DIR}`);
+  restoreSessions().catch((err) => logger.error({ err }, '[bridge] Erro na restauração de sessões'));
 });

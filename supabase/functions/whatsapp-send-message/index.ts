@@ -2,6 +2,9 @@ import { corsHeaders, cleanPhone, json } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { getChannelSecret, sendWhatsAppText, upsertContactAndConversation } from "../_shared/whatsapp.ts";
 
+const BRIDGE_URL = Deno.env.get("BRIDGE_URL") ?? "";
+const BRIDGE_SECRET = Deno.env.get("BRIDGE_SECRET") ?? "";
+
 interface Body {
   channel_id: string;
   to?: string;
@@ -23,13 +26,66 @@ Deno.serve(async (req) => {
 
     const { data: channel, error: channelError } = await admin
       .from("channels")
-      .select("id, company_id, status, phone_number_id")
+      .select("id, company_id, status, phone_number_id, provider")
       .eq("id", body.channel_id)
       .eq("company_id", companyId)
       .maybeSingle();
     if (channelError) throw channelError;
     if (!channel) return json({ error: "Canal não encontrado." }, 404);
     if (channel.status !== "connected") return json({ error: "Canal não está conectado." }, 400);
+
+    // ── Roteamento por provider ──────────────────────────────────────────────
+    if (channel.provider === "qr_code") {
+      if (!BRIDGE_URL || !BRIDGE_SECRET) {
+        return json({ error: "Bridge Railway não configurado no servidor." }, 503);
+      }
+      let toQr = cleanPhone(body.to ?? "");
+      if (body.conversation_id) {
+        const { data: conv } = await admin
+          .from("conversations")
+          .select("contacts(phone, wa_id)")
+          .eq("id", body.conversation_id)
+          .eq("company_id", companyId)
+          .maybeSingle();
+        const c = Array.isArray(conv?.contacts) ? conv.contacts[0] : conv?.contacts;
+        toQr = cleanPhone(c?.wa_id || c?.phone || toQr);
+      }
+      if (!toQr || toQr.length < 10) return json({ error: "Telefone destino inválido." }, 400);
+
+      const bridgeRes = await fetch(`${BRIDGE_URL}/session/${channel.id}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-bridge-secret": BRIDGE_SECRET },
+        body: JSON.stringify({ to: toQr, message: body.message.trim() }),
+      });
+      const bridgeData = await bridgeRes.json().catch(() => ({}));
+      if (!bridgeRes.ok) {
+        return json({ ok: false, error: bridgeData?.error ?? `Bridge retornou HTTP ${bridgeRes.status}` }, 200);
+      }
+
+      const { contactId, conversationId } = await upsertContactAndConversation(admin, {
+        companyId,
+        channelId: channel.id,
+        waId: toQr,
+        name: toQr,
+        inbound: false,
+        lastMessage: body.message.trim(),
+      });
+
+      const { data: savedMsg, error: msgErr } = await admin.from("messages").insert({
+        company_id: companyId,
+        channel_id: channel.id,
+        conversation_id: conversationId,
+        contact_id: contactId,
+        direction: "outbound",
+        message_type: "text",
+        content: body.message.trim(),
+        sender_type: "agent",
+        status: "sent",
+      }).select("id").single();
+      if (msgErr) throw msgErr;
+
+      return json({ ok: true, conversation_id: conversationId, message_id: savedMsg.id });
+    }
 
     const secret = await getChannelSecret(admin, channel.id);
     if (!secret?.access_token || !channel.phone_number_id) {
