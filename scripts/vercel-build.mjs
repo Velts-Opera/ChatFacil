@@ -1,5 +1,5 @@
 import { execSync } from "child_process";
-import { cpSync, mkdirSync, writeFileSync, readFileSync } from "fs";
+import { copyFileSync, cpSync, mkdirSync, writeFileSync } from "fs";
 import { resolve } from "path";
 
 const root = process.cwd();
@@ -24,16 +24,13 @@ cpSync(resolve(root, "dist/server"), fnDir, { recursive: true });
 
 // 5. Incluir package.json de produção na função para que o Node.js resolva módulos externos
 //    (react, @tanstack/react-router etc. são importados como externos nas chunks SSR)
-const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
-const prodPkg = {
-  name: pkg.name,
-  version: pkg.version,
-  type: "module",
-  dependencies: pkg.dependencies,
-};
-writeFileSync(resolve(fnDir, "package.json"), JSON.stringify(prodPkg, null, 2));
+// Reusa package.json + lockfile da raiz para instalar versões exatas com npm ci
+// (npm install sem lock resolve versões soltas e quebra quando o registro
+// diverge do lockfile). --omit=dev instala apenas as dependências de produção.
+copyFileSync(resolve(root, "package.json"), resolve(fnDir, "package.json"));
+copyFileSync(resolve(root, "package-lock.json"), resolve(fnDir, "package-lock.json"));
 console.log("Installing production dependencies in function directory...");
-execSync("npm install --omit=dev --prefer-offline", { cwd: fnDir, stdio: "inherit" });
+execSync("npm ci --omit=dev --prefer-offline --no-audit --no-fund", { cwd: fnDir, stdio: "inherit" });
 
 // 6. Node.js runtime com WebWorker launcher — suporta fetch handler + node_modules
 writeFileSync(
@@ -51,8 +48,19 @@ writeFileSync(
   JSON.stringify({
     version: 3,
     routes: [
-      { src: "^/assets/(.*)$", dest: "/assets/$1" },
-      { src: "/(.*)", dest: "/index" },
+      // Cache imutável para assets com hash no nome
+      {
+        src: "^/assets/(.*)$",
+        headers: { "cache-control": "public, max-age=31536000, immutable" },
+        continue: true,
+      },
+      // Serve qualquer arquivo estático existente (assets, favicon, etc.)
+      { handle: "filesystem" },
+      // Todo o resto vai para a função SSR
+      {
+        src: "/(.*)",
+        dest: "/index",
+      },
     ],
   }, null, 2)
 );

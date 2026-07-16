@@ -1,114 +1,123 @@
-/**
- * whatsapp-qr-bridge — Proxy seguro entre o frontend e o bridge Railway.
- *
- * O frontend nunca chama o bridge diretamente.
- * Toda chamada passa aqui, que:
- *   1. Verifica o JWT do usuário Supabase
- *   2. Garante que o channel_id pertence à empresa do usuário
- *   3. Encaminha ao bridge com o BRIDGE_SECRET (jamais exposto ao frontend)
- */
-
+// Proxy autenticado entre o frontend e o WhatsApp Bridge (Baileys).
+// Cada usuário só consegue operar canais QR da PRÓPRIA empresa:
+// o JWT é validado, o canal é conferido contra company_id e só então
+// a chamada é repassada ao bridge com o BRIDGE_SECRET (que nunca
+// chega ao navegador).
 import { corsHeaders, json } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
 
-const BRIDGE_URL = Deno.env.get("BRIDGE_URL") ?? "";
+type Action = "start" | "qr" | "status" | "send" | "disconnect" | "health";
+
+interface Body {
+  action: Action;
+  channel_id?: string;
+  to?: string;
+  message?: string;
+}
+
+// Aceita os dois nomes de secret para a URL do bridge hospedado
+const BRIDGE_URL = (Deno.env.get("WA_BRIDGE_URL") ?? Deno.env.get("BRIDGE_URL") ?? "").replace(/\/$/, "");
 const BRIDGE_SECRET = Deno.env.get("BRIDGE_SECRET") ?? "";
 
-type Action = "start" | "qr" | "status" | "disconnect" | "send";
+async function bridgeFetch(path: string, init: RequestInit = {}) {
+  const res = await fetch(`${BRIDGE_URL}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      "x-bridge-secret": BRIDGE_SECRET,
+      ...(init.headers ?? {}),
+    },
+    signal: AbortSignal.timeout(15_000),
+  });
+  const body = await res.json().catch(() => null);
+  return { status: res.status, body };
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   if (!BRIDGE_URL || !BRIDGE_SECRET) {
-    return json({ error: "Bridge não configurado no servidor." }, 503);
+    return json({
+      error: "Bridge não configurado. Defina WA_BRIDGE_URL e BRIDGE_SECRET nos secrets das Edge Functions.",
+      code: "bridge_not_configured",
+    }, 503);
   }
 
-  let body: Record<string, unknown> = {};
-  if (req.method === "POST") {
-    body = await req.json().catch(() => ({})) as Record<string, unknown>;
-  }
-
-  const url = new URL(req.url);
-  const action = (url.searchParams.get("action") ?? body["action"]) as Action | null;
-  const channelId = (url.searchParams.get("channel_id") ?? body["channel_id"]) as string | null;
-
-  if (!action || !channelId) {
-    return json({ error: "action e channel_id são obrigatórios." }, 400);
+  let auth;
+  try {
+    auth = await requireUser(req);
+  } catch (e) {
+    return json({ error: (e as Error).message ?? "Unauthorized" }, 401);
   }
 
   try {
-    const { companyId, admin } = await requireUser(req);
+    const body = (await req.json().catch(() => ({}))) as Body;
+    const { action } = body;
 
-    // Garante que o canal pertence à empresa do usuário autenticado
-    const { data: channel, error: chErr } = await admin
-      .from("channels")
-      .select("id, company_id, provider")
-      .eq("id", channelId)
-      .eq("company_id", companyId)
-      .maybeSingle();
-
-    if (chErr) throw chErr;
-    if (!channel) return json({ error: "Canal não encontrado." }, 404);
-    if (channel.provider !== "qr_code") {
-      return json({ error: "Este canal não usa QR Code." }, 400);
+    if (action === "health") {
+      const { status, body: result } = await bridgeFetch("/health");
+      return json({ ok: status === 200, bridge: result }, 200);
     }
 
-    const bridgeHeaders: HeadersInit = {
-      "Content-Type": "application/json",
-      "x-bridge-secret": BRIDGE_SECRET,
-    };
+    if (!body.channel_id) return json({ error: "channel_id é obrigatório." }, 400);
 
-    let bridgeRes: Response;
+    // Isolamento por tenant: o canal precisa ser QR e pertencer à empresa do usuário.
+    const { data: channel, error } = await auth.admin
+      .from("channels")
+      .select("id, company_id, provider")
+      .eq("id", body.channel_id)
+      .eq("company_id", auth.companyId)
+      .eq("provider", "qr_code")
+      .maybeSingle();
+    if (error) throw error;
+    if (!channel) return json({ error: "Canal não encontrado para a sua empresa." }, 404);
 
     switch (action) {
       case "start": {
-        bridgeRes = await fetch(`${BRIDGE_URL}/session/start`, {
+        const { status, body: result } = await bridgeFetch("/session/start", {
           method: "POST",
-          headers: bridgeHeaders,
-          body: JSON.stringify({ channelId }),
+          body: JSON.stringify({ channelId: channel.id }),
         });
-        break;
+        return json(result ?? { error: "Bridge sem resposta" }, status);
       }
       case "qr": {
-        bridgeRes = await fetch(`${BRIDGE_URL}/session/${channelId}/qr`, {
-          headers: bridgeHeaders,
-        });
-        break;
+        const { status, body: result } = await bridgeFetch(`/session/${channel.id}/qr`);
+        return json(result ?? { error: "Bridge sem resposta" }, status);
       }
       case "status": {
-        bridgeRes = await fetch(`${BRIDGE_URL}/session/${channelId}/status`, {
-          headers: bridgeHeaders,
-        });
-        break;
-      }
-      case "disconnect": {
-        bridgeRes = await fetch(`${BRIDGE_URL}/session/${channelId}/disconnect`, {
-          method: "POST",
-          headers: bridgeHeaders,
-          body: JSON.stringify({}),
-        });
-        break;
+        const { status, body: result } = await bridgeFetch(`/session/${channel.id}/status`);
+        return json(result ?? { error: "Bridge sem resposta" }, status);
       }
       case "send": {
-        const { to, message } = body as { to?: string; message?: string };
-        if (!to || !message) return json({ error: "to e message são obrigatórios para send." }, 400);
-        bridgeRes = await fetch(`${BRIDGE_URL}/session/${channelId}/send`, {
+        if (!body.to || !body.message) return json({ error: "to e message são obrigatórios." }, 400);
+        const { status, body: result } = await bridgeFetch(`/session/${channel.id}/send`, {
           method: "POST",
-          headers: bridgeHeaders,
-          body: JSON.stringify({ to, message }),
+          body: JSON.stringify({ to: body.to, message: body.message }),
         });
-        break;
+        return json(result ?? { error: "Bridge sem resposta" }, status);
+      }
+      case "disconnect": {
+        const { status, body: result } = await bridgeFetch(`/session/${channel.id}/disconnect`, {
+          method: "POST",
+          body: JSON.stringify({}),
+        });
+        await auth.admin.from("channels").update({
+          status: "disconnected",
+          updated_at: new Date().toISOString(),
+        }).eq("id", channel.id);
+        return json(result ?? { error: "Bridge sem resposta" }, status);
       }
       default:
-        return json({ error: `Ação desconhecida: ${action}` }, 400);
+        return json({ error: `Ação inválida: ${String(action)}` }, 400);
     }
-
-    const data = await bridgeRes.json().catch(() => null);
-    return json(data ?? {}, bridgeRes.status);
   } catch (e) {
-    console.error("[whatsapp-qr-bridge] erro:", e);
-    const msg = (e as Error).message ?? "Erro inesperado";
-    const status = msg === "Unauthorized" || msg.includes("Authorization") ? 401 : 500;
-    return json({ error: msg }, status);
+    const message = (e as Error).message ?? "Erro inesperado";
+    const isTimeout = /timed? ?out|abort/i.test(message);
+    console.error("whatsapp-qr-bridge error", e);
+    return json({
+      error: isTimeout ? "Bridge não respondeu. Verifique se o serviço do bridge está no ar." : message,
+      code: isTimeout ? "bridge_unreachable" : "internal_error",
+    }, isTimeout ? 502 : 500);
   }
 });
