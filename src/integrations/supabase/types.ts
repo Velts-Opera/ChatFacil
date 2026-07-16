@@ -66,6 +66,7 @@ export type Database = {
       }
       ai_interactions: {
         Row: {
+          agent_id: string | null
           channel_id: string | null
           company_id: string
           completion_tokens: number | null
@@ -82,6 +83,7 @@ export type Database = {
           status: string
         }
         Insert: {
+          agent_id?: string | null
           channel_id?: string | null
           company_id: string
           completion_tokens?: number | null
@@ -98,6 +100,7 @@ export type Database = {
           status?: string
         }
         Update: {
+          agent_id?: string | null
           channel_id?: string | null
           company_id?: string
           completion_tokens?: number | null
@@ -114,6 +117,13 @@ export type Database = {
           status?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "ai_interactions_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agent_settings"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "ai_interactions_channel_id_fkey"
             columns: ["channel_id"]
@@ -450,11 +460,11 @@ export type Database = {
       channels: {
         Row: {
           access_token: string | null
+          agent_id: string | null
           ai_enabled: boolean
           app_id: string | null
           app_secret_present: boolean
           auto_reply_enabled: boolean
-          bridge_url: string | null
           business_hours: string | null
           company_id: string
           connected_at: string | null
@@ -483,11 +493,11 @@ export type Database = {
         }
         Insert: {
           access_token?: string | null
+          agent_id?: string | null
           ai_enabled?: boolean
           app_id?: string | null
           app_secret_present?: boolean
           auto_reply_enabled?: boolean
-          bridge_url?: string | null
           business_hours?: string | null
           company_id: string
           connected_at?: string | null
@@ -516,11 +526,11 @@ export type Database = {
         }
         Update: {
           access_token?: string | null
+          agent_id?: string | null
           ai_enabled?: boolean
           app_id?: string | null
           app_secret_present?: boolean
           auto_reply_enabled?: boolean
-          bridge_url?: string | null
           business_hours?: string | null
           company_id?: string
           connected_at?: string | null
@@ -548,6 +558,13 @@ export type Database = {
           webhook_url?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "channels_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agent_settings"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "channels_company_id_fkey"
             columns: ["company_id"]
@@ -905,6 +922,7 @@ export type Database = {
       }
       messages: {
         Row: {
+          agent_id: string | null
           ai_confidence: number | null
           ai_generated: boolean
           channel_id: string | null
@@ -925,6 +943,7 @@ export type Database = {
           status: string | null
         }
         Insert: {
+          agent_id?: string | null
           ai_confidence?: number | null
           ai_generated?: boolean
           channel_id?: string | null
@@ -945,6 +964,7 @@ export type Database = {
           status?: string | null
         }
         Update: {
+          agent_id?: string | null
           ai_confidence?: number | null
           ai_generated?: boolean
           channel_id?: string | null
@@ -965,6 +985,13 @@ export type Database = {
           status?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "messages_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agent_settings"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "messages_channel_id_fkey"
             columns: ["channel_id"]
@@ -1415,6 +1442,7 @@ export type Database = {
     Views: {
       channel_public_view: {
         Row: {
+          agent_id: string | null
           ai_enabled: boolean | null
           app_secret_present: boolean | null
           auto_reply_enabled: boolean | null
@@ -1444,6 +1472,7 @@ export type Database = {
           webhook_url: string | null
         }
         Insert: {
+          agent_id?: string | null
           ai_enabled?: boolean | null
           app_secret_present?: boolean | null
           auto_reply_enabled?: boolean | null
@@ -1473,6 +1502,7 @@ export type Database = {
           webhook_url?: string | null
         }
         Update: {
+          agent_id?: string | null
           ai_enabled?: boolean | null
           app_secret_present?: boolean | null
           auto_reply_enabled?: boolean | null

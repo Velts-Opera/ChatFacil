@@ -130,7 +130,7 @@ export function createTenantAgent({
     };
   }
 
-  async function saveMessage({ channel, conversationId, contactId, content, direction, senderType, messageId, timestamp }) {
+  async function saveMessage({ channel, conversationId, contactId, content, direction, senderType, messageId, timestamp, agentId }) {
     const result = await getOne('messages', {
       method: 'POST',
       headers: { Prefer: 'return=representation' },
@@ -141,6 +141,7 @@ export function createTenantAgent({
         contact_id: contactId,
         direction,
         sender_type: senderType,
+        ...(agentId ? { agent_id: agentId } : {}),
         content,
         message_type: 'text',
         status: direction === 'inbound' ? 'received' : 'sent',
@@ -151,7 +152,7 @@ export function createTenantAgent({
     return result;
   }
 
-  async function buildAgentPrompt(channel, conversationId, content) {
+  async function buildAgentPrompt(channel, conversationId, content, agent) {
     const knowledge = await request(
       `ai_knowledge_items?select=title,content&company_id=eq.${encode(channel.company_id)}&is_active=eq.true&or=(channel_id.is.null,channel_id.eq.${encode(channel.id)})&limit=50`,
     );
@@ -173,12 +174,16 @@ export function createTenantAgent({
       .map((item) => `${item.direction === 'inbound' ? 'Cliente' : 'Agente'}: ${item.content}`)
       .join('\n');
     const tone = channel.communication_tone || 'profissional';
-    return `Você é o agente de atendimento exclusivo da empresa "${channel.company_name || 'empresa'}".\n\nTom: ${tone}.\nServiços: ${channel.services_description || 'não informado'}.\nHorário: ${channel.business_hours || 'não informado'}.\n\nBase de conhecimento:\n${knowledgeText}${quickRepliesText}\n\nHistórico:\n${historyText}\n\nRegras:\n- Responda em PT-BR, em no máximo 3 frases curtas.\n- Use apenas dados da empresa e da base.\n- Não invente preço, horário ou disponibilidade.\n- Se precisar de uma pessoa, diga que vai transferir para um atendente.\n\nMensagem atual do cliente:\n${content}`;
+    const agentName = agent?.agent_name?.trim() || 'Assistente';
+    const customPrompt = agent?.system_prompt?.trim()
+      ? `\n\nInstruções exclusivas deste agente:\n${agent.system_prompt.trim()}`
+      : '';
+    return `Você é "${agentName}", agente de atendimento exclusivo da empresa "${channel.company_name || 'empresa'}".${customPrompt}\n\nTom: ${tone}.\nServiços: ${channel.services_description || 'não informado'}.\nHorário: ${channel.business_hours || 'não informado'}.\n\nBase de conhecimento:\n${knowledgeText}${quickRepliesText}\n\nHistórico:\n${historyText}\n\nRegras:\n- Responda em PT-BR, em no máximo 3 frases curtas.\n- Use apenas dados da empresa e da base.\n- Não invente preço, horário ou disponibilidade.\n- Se precisar de uma pessoa, diga que vai transferir para um atendente.\n\nMensagem atual do cliente:\n${content}`;
   }
 
   async function loadChannel(channelId) {
     const channel = await getOne(
-      `channels?select=id,company_id,name,provider,ai_enabled,auto_reply_enabled,human_handoff_enabled,handoff_when_unknown,greeting_message,out_of_hours_message,business_hours&provider=eq.qr_code&id=eq.${encode(channelId)}&limit=1`,
+      `channels?select=id,company_id,agent_id,name,provider,ai_enabled,auto_reply_enabled,human_handoff_enabled,handoff_when_unknown,greeting_message,out_of_hours_message,business_hours&provider=eq.qr_code&id=eq.${encode(channelId)}&limit=1`,
     );
     if (!channel) throw new Error(`Canal QR ${channelId} não encontrado`);
     const company = await getOne(
@@ -193,26 +198,42 @@ export function createTenantAgent({
     };
   }
 
-  async function generateReply(channel, conversationId, content) {
+  async function loadAgent(channel) {
+    const filter = channel.agent_id
+      ? `id=eq.${encode(channel.agent_id)}&company_id=eq.${encode(channel.company_id)}`
+      : `company_id=eq.${encode(channel.company_id)}`;
+    return getOne(
+      `ai_agent_settings?select=id,company_id,is_enabled,agent_name,system_prompt,temperature,max_tokens,model&${filter}&limit=1`,
+    );
+  }
+
+  async function generateReply(channel, conversationId, content, agent) {
     if (!geminiApiKey) return null;
-    const prompt = await buildAgentPrompt(channel, conversationId, content);
+    const prompt = await buildAgentPrompt(channel, conversationId, content, agent);
     const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(geminiApiKey)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.4, maxOutputTokens: 400 } }),
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: Number(agent?.temperature ?? 0.4),
+          maxOutputTokens: Number(agent?.max_tokens ?? 400),
+        },
+      }),
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`Gemini ${response.status}: ${JSON.stringify(body)}`);
     return body?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
   }
 
-  async function saveAiInteraction(channel, conversationId, values) {
+  async function saveAiInteraction(channel, conversationId, agentId, values) {
     await request('ai_interactions', {
       method: 'POST',
       headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({
         company_id: channel.company_id,
         channel_id: channel.id,
+        agent_id: agentId ?? null,
         conversation_id: conversationId,
         model,
         ...values,
@@ -236,6 +257,7 @@ export function createTenantAgent({
 
   async function processMessage({ channelId, waId, rawJid, pushName, content, messageId, timestamp }) {
     const channel = await loadChannel(channelId);
+    const agent = await loadAgent(channel);
     if (!channel) throw new Error(`Canal QR ${channelId} não encontrado`);
     if (messageId) {
       const existing = await getOne(`messages?select=id&company_id=eq.${encode(channel.company_id)}&channel_id=eq.${encode(channelId)}&meta_message_id=eq.${encode(messageId)}&limit=1`);
@@ -243,11 +265,11 @@ export function createTenantAgent({
     }
     const { contactId, conversationId, aiHandling } = await upsertContactAndConversation(channel, { waId, pushName, content });
     const inbound = await saveMessage({ channel, conversationId, contactId, content, direction: 'inbound', senderType: 'contact', messageId, timestamp });
-    if (!channel.ai_enabled || !channel.auto_reply_enabled || !aiHandling) return null;
+    if (!channel.ai_enabled || !channel.auto_reply_enabled || !aiHandling || agent?.is_enabled === false) return null;
 
     if (!geminiApiKey) {
       await handoffConversation(channel, conversationId, 'GEMINI_API_KEY ausente');
-      await saveAiInteraction(channel, conversationId, {
+      await saveAiInteraction(channel, conversationId, agent?.id, {
         inbound_message_id: inbound?.id ?? null,
         status: 'error',
         input: content,
@@ -258,12 +280,12 @@ export function createTenantAgent({
 
     let reply;
     try {
-      reply = await generateReply(channel, conversationId, content);
+      reply = await generateReply(channel, conversationId, content, agent);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger?.error?.({ error, channelId, conversationId }, '[tenant-agent] Falha ao gerar resposta');
       await handoffConversation(channel, conversationId, 'Falha ao gerar resposta da IA');
-      await saveAiInteraction(channel, conversationId, {
+      await saveAiInteraction(channel, conversationId, agent?.id, {
         inbound_message_id: inbound?.id ?? null,
         status: 'error',
         input: content,
@@ -276,7 +298,7 @@ export function createTenantAgent({
       if (channel.handoff_when_unknown) {
         await handoffConversation(channel, conversationId, 'IA não respondeu com segurança');
       }
-      await saveAiInteraction(channel, conversationId, {
+      await saveAiInteraction(channel, conversationId, agent?.id, {
         inbound_message_id: inbound?.id ?? null,
         status: 'error',
         input: content,
@@ -285,7 +307,15 @@ export function createTenantAgent({
       return null;
     }
 
-    const outbound = await saveMessage({ channel, conversationId, contactId, content: reply, direction: 'outbound', senderType: 'ai' });
+    const outbound = await saveMessage({
+      channel,
+      conversationId,
+      contactId,
+      content: reply,
+      direction: 'outbound',
+      senderType: 'ai',
+      agentId: agent?.id,
+    });
     const needsHuman = channel.human_handoff_enabled && /atendente|humano|transfer/i.test(reply);
     await request(`conversations?id=eq.${encode(conversationId)}&company_id=eq.${encode(channel.company_id)}`, {
       method: 'PATCH',
@@ -299,7 +329,7 @@ export function createTenantAgent({
         updated_at: new Date().toISOString(),
       }),
     });
-    await saveAiInteraction(channel, conversationId, {
+    await saveAiInteraction(channel, conversationId, agent?.id, {
       inbound_message_id: inbound?.id ?? null,
       outbound_message_id: outbound?.id ?? null,
       status: 'completed',

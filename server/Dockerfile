@@ -14,7 +14,6 @@ RUN mkdir -p /data
 EXPOSE 3001
 
 ENV NODE_ENV=production \
-    BRIDGE_HOST=0.0.0.0 \
     SESSION_DATA_PATH=/data
 
 CMD ["node", "whatsapp-bridge.js"]

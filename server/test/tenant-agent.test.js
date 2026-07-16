@@ -61,6 +61,9 @@ test('tenant agent persists inbound data and hands off when the AI key is absent
     if (method === 'GET' && table === 'companies') {
       return jsonResponse([{ name: 'Clínica A', communication_tone: 'profissional' }]);
     }
+    if (method === 'GET' && table === 'ai_agent_settings') {
+      return jsonResponse([{ id: 'agent-a', company_id: 'company-a', is_enabled: true, agent_name: 'Bia' }]);
+    }
     if (method === 'GET' && table === 'messages') return jsonResponse([]);
     if (method === 'GET' && table === 'contacts') return jsonResponse([]);
     if (method === 'POST' && table === 'contacts') return jsonResponse([{ id: 'contact-a' }]);

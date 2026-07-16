@@ -2,11 +2,11 @@
   "name": "chatfacil-whatsapp-bridge",
   "version": "1.0.0",
   "type": "module",
-  "description": "Bridge WhatsApp QR Code para o ChatFacil",
+  "description": "API autenticada do WhatsApp QR/Baileys para o ChatFacil",
   "scripts": {
     "start": "node whatsapp-bridge.js",
     "dev": "node --watch whatsapp-bridge.js",
-    "test": "node --test"
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",

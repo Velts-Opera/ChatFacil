@@ -8,6 +8,8 @@
     "build": "node scripts/vercel-build.mjs",
     "build:vite": "vite build",
     "build:dev": "vite build --mode development",
+    "typecheck": "tsc --noEmit",
+    "test": "npm test --prefix server",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write ."

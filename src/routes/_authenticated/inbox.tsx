@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { formatWhatsAppApiError, sendWhatsAppMessage } from "@/lib/whatsapp/api-client";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -127,17 +128,17 @@ function InboxPage() {
     if (!reply.trim()) return;
     setSending(true);
     try {
-      const { data, error } = await supabase.functions.invoke("whatsapp-send-message", {
-        body: { channel_id: selected.channel_id, conversation_id: selected.id, message: reply.trim() },
+      const data = await sendWhatsAppMessage(selected.channel_id, {
+        conversation_id: selected.id,
+        message: reply.trim(),
       });
-      if (error) throw error;
-      if (!data?.ok) throw new Error(data?.error ?? "Falha ao enviar mensagem.");
+      if (!data.ok) throw new Error("A API não confirmou o envio da mensagem.");
       setReply("");
       toast.success("Resposta enviada pelo WhatsApp.");
       qc.invalidateQueries({ queryKey: ["messages", selected.id] });
       qc.invalidateQueries({ queryKey: ["conversations"] });
-    } catch (e: any) {
-      toast.error(e.message ?? "Erro inesperado.");
+    } catch (error) {
+      toast.error(formatWhatsAppApiError(error));
     } finally {
       setSending(false);
     }

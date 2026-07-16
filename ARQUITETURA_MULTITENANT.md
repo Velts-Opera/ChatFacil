@@ -1,125 +1,66 @@
-# Arquitetura Multi-tenant — WhatsApp por QR Code
+# Arquitetura multitenant do WhatsApp
 
-Cada empresa (tenant) conecta **o próprio número de WhatsApp**, tem **a própria sessão**,
-**o próprio QR Code** e **o próprio agente de IA**. Nada é compartilhado entre empresas.
+## Fluxo obrigatório
 
-## Como funciona
-
-```
-Navegador do cliente (Vercel)
-        │  supabase.functions.invoke("whatsapp-qr-bridge")  ← JWT do usuário
-        ▼
-Edge Function whatsapp-qr-bridge (Supabase)
-        │  1. valida o login (JWT)
-        │  2. confere que o canal pertence à empresa do usuário (company_id)
-        │  3. repassa ao bridge com o BRIDGE_SECRET (nunca exposto ao navegador)
-        ▼
-WhatsApp Bridge (Railway/Render/VPS — processo Node persistente)
-        │  1 sessão Baileys POR CANAL (Map channelId → sessão isolada)
-        │  credenciais salvas em /data/sessions/<channelId>/ (volume persistente)
-        │  restaura TODAS as sessões automaticamente após restart
-        ▼
-WhatsApp do cliente (número exclusivo dele)
+```text
+Frontend no Vercel
+        |
+        | Authorization: Bearer <Supabase access_token>
+        v
+API do ChatFácil no Railway
+        |
+        |-- valida o token em /auth/v1/user
+        |-- busca profiles.company_id
+        |-- busca channels.id
+        |-- compara channel.company_id com o company_id autenticado
+        |-- mantém uma sessão Baileys por channel_id em /data
+        |-- grava status e phone_number no canal
+        |-- roteia o envio pelo provider do canal
+        v
+Supabase: Auth, banco, RLS, empresas, canais, agentes, contatos e mensagens
 ```
 
-Mensagem recebida → o bridge chama o **agente exclusivo do tenant**
-(`server/lib/tenant-agent.js`): carrega a base de conhecimento, o tom e os serviços
-**apenas da empresa dona do canal** e responde pelo **número daquele canal**.
+O frontend nunca recebe `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` ou qualquer segredo de provedor. O QR existe somente na memória da sessão identificada pelo `channel_id` e é devolvido apenas depois da autorização multitenant.
 
-Resposta humana pelo Inbox → Edge Function `whatsapp-send-message` detecta
-`provider = qr_code` e envia pela sessão do canal no bridge (canais Meta Cloud API
-continuam indo pela API oficial).
+## Autorização
 
-## Garantias de isolamento
+Todas as rotas sob `/api/whatsapp` executam a mesma sequência antes da operação:
 
-| Camada | Mecanismo |
-| --- | --- |
-| Banco | RLS por `company_id` em todas as tabelas (canais, conversas, mensagens, IA) |
-| Edge Function | Só opera canais `qr_code` da empresa do usuário autenticado |
-| Bridge | Uma sessão Baileys por canal; diretório de credenciais separado por canal |
-| Agente IA | Prompt montado somente com dados (`ai_knowledge_items`, `quick_replies`, empresa) do tenant dono do canal |
-| Segredo | `BRIDGE_SECRET` só existe no bridge e nos secrets do Supabase — nunca no navegador |
+1. Exigem `Authorization: Bearer <token>`.
+2. Validam o token no Supabase Auth e obtêm o usuário.
+3. Buscam `profiles.company_id` com credencial exclusiva do servidor.
+4. Buscam o canal pelo ID, sem esconder sua existência atrás do filtro da empresa.
+5. Retornam `404` se o canal não existe e `403` se ele pertence a outra empresa.
 
-## Por que o bridge não roda no Vercel
+Respostas de erro seguem `{ "error": { "code": "...", "message": "..." } }`. O frontend diferencia `401`, `403`, `404`, `409`, `429` e `500` e preserva a mensagem retornada pela API.
 
-O Vercel executa funções serverless de curta duração. Uma sessão de WhatsApp Web
-(Baileys) é um **WebSocket persistente** que precisa ficar aberto 24/7 — igual ao que
-ManyChat/Z-API mantêm em servidores próprios. Por isso o bridge roda em um serviço
-de processo contínuo (Railway, Render, Fly.io ou VPS), e o Vercel serve apenas o app web.
+## Rotas Railway
 
----
+| Método | Rota | Função |
+| --- | --- | --- |
+| `GET` | `/health` | Health check sem dados sensíveis |
+| `POST` | `/api/whatsapp/channels/:channelId/connect` | Cria ou recupera a sessão Baileys |
+| `GET` | `/api/whatsapp/channels/:channelId/status` | Estado do canal autorizado |
+| `GET` | `/api/whatsapp/channels/:channelId/qr` | QR exclusivo do canal |
+| `POST` | `/api/whatsapp/channels/:channelId/disconnect` | Encerra sessão e remove credenciais locais |
+| `POST` | `/api/whatsapp/channels/:channelId/send` | Envia pelo provider do canal |
 
-# Deploy definitivo (3 partes)
+`connect`, `qr` e `disconnect` retornam `409` quando usados em canal que não seja `qr_code`. `send` usa a sessão Baileys do próprio canal para `qr_code`; canais `meta_cloud_api` preservam o transporte oficial da Meta.
 
-## 1. Bridge (Railway — recomendado)
+## Sessões e agentes
 
-1. Crie um serviço novo apontando para a pasta `server/` deste repositório
-   (há um `Dockerfile` pronto; Root Directory = `server`).
-2. Adicione um **volume persistente** montado em `/data` (sem isso, cada deploy/restart
-   apaga as sessões e todos os clientes precisam escanear QR de novo).
-3. Variáveis de ambiente:
+- O diretório persistente é `SESSION_DATA_PATH=/data`.
+- Cada subdiretório é o `channel_id`; nenhuma credencial é compartilhada.
+- No boot, somente diretórios com `creds.json` e canal `qr_code` ainda existente são restaurados.
+- Eventos de conexão atualizam exclusivamente o canal correspondente.
+- `channels.agent_id` deve apontar para `ai_agent_settings` da mesma empresa. Um trigger rejeita vínculos cruzados.
+- Quando o canal não tem `agent_id`, o servidor usa o agente padrão da empresa.
+- Respostas de IA e atendimento humano retornam pelo mesmo provider selecionado pelo canal.
 
-```env
-BRIDGE_HOST=0.0.0.0
-PORT=3001
-SESSIONS_DIR=/data/sessions
-BRIDGE_SECRET=<gere: openssl rand -hex 32>
-QR_EVENT_MODE=direct
-SUPABASE_URL=https://SEU-PROJETO.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=<service role key>
-GEMINI_API_KEY=<sua chave Gemini>
-GEMINI_MODEL=gemini-1.5-flash
-```
+## CORS
 
-4. Anote a URL pública do serviço (ex.: `https://chatfacil-bridge.up.railway.app`).
-5. Teste: `curl https://SUA-URL/health` → deve responder `{"ok":true,...}`.
+`ALLOWED_ORIGINS` é uma lista separada por vírgulas. Apenas origens presentes nela recebem CORS. O preflight aceita `Authorization` e `Content-Type` e responde `204` a `OPTIONS`.
 
-Com `BRIDGE_HOST=0.0.0.0`, **todas** as rotas `/session/*` exigem o header
-`x-bridge-secret` — o bridge recusa qualquer chamada sem o segredo.
+## Componentes removidos
 
-## 2. Supabase
-
-```bash
-supabase secrets set BRIDGE_SECRET="<o mesmo segredo do bridge>"
-supabase secrets set WA_BRIDGE_URL="https://SUA-URL-DO-BRIDGE"
-
-supabase functions deploy whatsapp-qr-bridge
-supabase functions deploy whatsapp-send-message
-supabase functions deploy whatsapp-qr-event --no-verify-jwt
-```
-
-(As demais funções e migrations seguem o `DEPLOY_NOW.md`.)
-
-## 3. Frontend (Vercel)
-
-Variáveis de ambiente do projeto:
-
-```env
-VITE_SUPABASE_URL=https://SEU-PROJETO.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
-```
-
-**Importante:** NÃO defina `VITE_WA_BRIDGE_URL` em produção. Essa variável liga o
-modo de desenvolvimento (navegador → bridge direto). Sem ela, o app usa o fluxo
-seguro pela Edge Function.
-
-Build command: `npm run build` (já gera `.vercel/output` no formato Build Output API).
-
-## Teste ponta a ponta
-
-1. Cliente A cria conta → empresa A é criada.
-2. Canais → WhatsApp Web (QR) → **Gerar QR Code** → escaneia com o número da empresa A.
-3. Envie uma mensagem de outro celular para o número A → a IA da empresa A responde
-   usando somente a base de conhecimento da empresa A.
-4. Repita com o Cliente B em outra conta: QR próprio, número próprio, agente próprio.
-5. No Inbox, a resposta humana sai pelo número do respectivo canal.
-
-## Desenvolvimento local
-
-```bash
-# terminal 1 — bridge local
-cd server && npm install && node whatsapp-bridge.js
-
-# terminal 2 — app com bridge direto
-VITE_WA_BRIDGE_URL=http://127.0.0.1:3001 npm run dev
-```
+Os antigos proxies de QR no Supabase não fazem parte desta arquitetura. A conexão, o QR, o status, a desconexão e o envio Baileys não passam por Edge Function nem por segredo compartilhado.

@@ -4,7 +4,7 @@ Este pacote entrega a versão endurecida do Comunica AI / ChatFácil AI para ope
 
 ## Entregue nesta versão
 
-- Frontend React/TanStack pronto para Vercel/Railway/Vite.
+- Frontend React/TanStack no Vercel e API permanente de WhatsApp QR/Baileys no Railway.
 - Supabase Auth + RLS por empresa.
 - Banco multiempresa com contatos, conversas, mensagens, canais, eventos, IA, templates, auditoria e health checks.
 - Conexão real com WhatsApp Cloud API pelo Meta Embedded Signup, com QR de onboarding temporário e alternativa manual por `Phone Number ID`, `WABA ID`, `Access Token`, `Verify Token` e `App Secret`.
@@ -25,7 +25,7 @@ Este pacote entrega a versão endurecida do Comunica AI / ChatFácil AI para ope
 - Não usa n8n.
 - Não usa Make.
 - O QR oficial apenas abre `/onboarding/:token`; a autorização acontece no Embedded Signup da Meta e cria um canal `meta_cloud_api`.
-- O bridge Baileys/WhatsApp Web permanece apenas como opção local legada, com provider `qr_code`, processo e credenciais separados. Ele não é usado pelo Embedded Signup e não oferece Calling API.
+- O provider `qr_code` usa a API Railway autenticada por JWT, com sessão Baileys persistente e exclusiva por `channel_id`. Ele não é usado pelo Embedded Signup e não oferece Calling API.
 - Não depende de dados mockados para WhatsApp, webhook, inbox, eventos, mensagens ou IA.
 
 ## Variáveis do frontend
@@ -35,6 +35,7 @@ No Vercel/Railway:
 ```env
 VITE_SUPABASE_URL=https://SEU-PROJETO.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+VITE_WA_API_URL=https://SEU-SERVICO.up.railway.app
 SUPABASE_URL=https://SEU-PROJETO.supabase.co
 SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 SUPABASE_PROJECT_ID=...

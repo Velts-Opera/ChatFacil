@@ -1,7 +1,6 @@
 import { corsHeaders, cleanPhone, json } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { getChannelSecret, sendWhatsAppText, upsertContactAndConversation } from "../_shared/whatsapp.ts";
-import { getBridgeConfig } from "../_shared/bridge-config.ts";
 
 interface Body {
   channel_id: string;
@@ -33,12 +32,12 @@ Deno.serve(async (req) => {
     if (channel.status !== "connected") return json({ error: "Canal não está conectado." }, 400);
 
     const isQrChannel = channel.provider === "qr_code";
-    let secret: { access_token?: string } | null = null;
-    if (!isQrChannel) {
-      secret = await getChannelSecret(admin, channel.id);
-      if (!secret?.access_token || !channel.phone_number_id) {
-        return json({ error: "Credenciais do canal não encontradas." }, 400);
-      }
+    if (isQrChannel) {
+      return json({ error: "Canais QR enviam exclusivamente pela API Railway autenticada." }, 409);
+    }
+    const secret = await getChannelSecret(admin, channel.id);
+    if (!secret?.access_token || !channel.phone_number_id) {
+      return json({ error: "Credenciais do canal não encontradas." }, 400);
     }
 
     let to = cleanPhone(body.to ?? "");
@@ -61,52 +60,22 @@ Deno.serve(async (req) => {
 
     if (!to || to.length < 10) return json({ error: "Telefone destino inválido. Use DDI + DDD + número." }, 400);
 
-    let metaJson: any = null;
-    if (isQrChannel) {
-      // Canal QR: envia pelo bridge Baileys hospedado, na sessão exclusiva do canal.
-      const bridgeConfig = await getBridgeConfig(admin);
-      if (!bridgeConfig.url || !bridgeConfig.secret) {
-        return json({ error: "Bridge não configurado. Cadastre a tabela bridge_settings ou os secrets WA_BRIDGE_URL/BRIDGE_SECRET." }, 503);
-      }
-      const bridgeRes = await fetch(`${bridgeConfig.url}/session/${channel.id}/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-bridge-secret": bridgeConfig.secret },
-        body: JSON.stringify({ to, message: body.message.trim() }),
-        signal: AbortSignal.timeout(20_000),
-      }).catch((e) => ({ ok: false, status: 502, json: async () => ({ error: String(e) }) }) as any);
-      const bridgeJson = await bridgeRes.json().catch(() => null);
-      if (!bridgeRes.ok) {
-        const errMsg = bridgeJson?.error || `Bridge retornou HTTP ${bridgeRes.status}`;
-        await admin.from("webhook_events").insert({
-          company_id: companyId,
-          channel_id: channel.id,
-          event_type: "send_message_failed",
-          status: "error",
-          source: "app",
-          payload: { request: { to, message: body.message }, response: bridgeJson },
-          error_message: errMsg,
-          processed_at: new Date().toISOString(),
-        });
-        return json({ ok: false, error: errMsg }, 200);
-      }
-    } else {
-      const meta = await sendWhatsAppText(secret!.access_token!, channel.phone_number_id!, to, body.message.trim());
-      if (!meta.ok) {
-        const errMsg = meta.json?.error?.message || `Meta API retornou HTTP ${meta.status}`;
-        await admin.from("webhook_events").insert({
-          company_id: companyId,
-          channel_id: channel.id,
-          event_type: "send_message_failed",
-          status: "error",
-          source: "app",
-          payload: { request: { to, message: body.message }, response: meta.json },
-          error_message: errMsg,
-          processed_at: new Date().toISOString(),
-        });
-        return json({ ok: false, error: errMsg, meta: meta.json }, 200);
-      }
-      metaJson = meta.json;
+    const meta = await sendWhatsAppText(secret.access_token, channel.phone_number_id, to, body.message.trim());
+    if (!meta.ok) {
+      const errMsg = meta.json?.error?.message || `Meta API retornou HTTP ${meta.status}`;
+      await admin.from("webhook_events").insert({
+        company_id: companyId,
+        channel_id: channel.id,
+        event_type: "send_message_failed",
+        status: "error",
+        source: "app",
+        payload: { request: { to, message: body.message }, response: meta.json },
+        error_message: errMsg,
+        processed_at: new Date().toISOString(),
+      });
+      return json({ ok: false, error: errMsg, meta: meta.json }, 200);
     }
+    const metaJson: any = meta.json;
 
     const { contactId, conversationId } = await upsertContactAndConversation(admin, {
       companyId,

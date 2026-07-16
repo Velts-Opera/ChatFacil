@@ -23,6 +23,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { WhatsAppQrConnect } from "@/components/whatsapp-qr-connect";
 import { MetaOnboardingLink } from "@/components/meta-embedded-signup";
 import type { ConnectionStatus } from "@/lib/whatsapp/provider";
+import { formatWhatsAppApiError, sendWhatsAppMessage } from "@/lib/whatsapp/api-client";
 
 export const Route = createFileRoute("/_authenticated/canais")({
   head: () => ({
@@ -219,9 +220,6 @@ function WhatsAppQrPanel({
   onBack: () => void;
   onChanged: () => void | Promise<void>;
 }) {
-  // Sem VITE_WA_BRIDGE_URL o fluxo usa a Edge Function (produção multi-tenant);
-  // com ela, fala direto com um bridge local (desenvolvimento).
-  const BRIDGE_URL = import.meta.env.VITE_WA_BRIDGE_URL as string | undefined;
   const [saving, setSaving] = useState(false);
   const [channelId, setChannelId] = useState<string | null>(channel?.id ?? null);
   const [currentStatus, setCurrentStatus] = useState<ConnectionStatus>((channel?.status as ConnectionStatus) ?? "disconnected");
@@ -240,6 +238,12 @@ function WhatsAppQrPanel({
         .maybeSingle();
       if (!profile?.company_id) throw new Error("Empresa não encontrada");
 
+      const { data: agent } = await supabase
+        .from("ai_agent_settings")
+        .select("id")
+        .eq("company_id", profile.company_id)
+        .maybeSingle();
+
       const { data, error } = await supabase
         .from("channels")
         .insert({
@@ -248,7 +252,7 @@ function WhatsAppQrPanel({
           name: "WhatsApp QR Code",
           status: "disconnected",
           provider: "qr_code",
-          bridge_url: BRIDGE_URL ?? null,
+          agent_id: agent?.id ?? null,
         } as any)
         .select("id")
         .single();
@@ -263,21 +267,11 @@ function WhatsAppQrPanel({
 
   async function handleConnected(phoneNumber: string) {
     setCurrentStatus("connected");
-    if (channelId) {
-      await supabase.from("channels").update({
-        status: "connected",
-        phone_number: phoneNumber || null,
-        connected_at: new Date().toISOString(),
-      } as any).eq("id", channelId);
-    }
     await onChanged();
   }
 
   async function handleDisconnected() {
     setCurrentStatus("disconnected");
-    if (channelId) {
-      await supabase.from("channels").update({ status: "disconnected" } as any).eq("id", channelId);
-    }
     await onChanged();
   }
 
@@ -301,8 +295,8 @@ function WhatsAppQrPanel({
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">WhatsApp Web via QR (legado)</h1>
-          <p className="text-sm text-muted-foreground">Sessão local separada do onboarding oficial da Meta e sem suporte à Calling API.</p>
+          <h1 className="text-xl font-semibold tracking-tight">WhatsApp via QR Code</h1>
+          <p className="text-sm text-muted-foreground">Sessão Baileys exclusiva deste canal, mantida pela API permanente no Railway.</p>
         </div>
       </div>
 
@@ -310,7 +304,7 @@ function WhatsAppQrPanel({
         <div className="mb-4">
           <h2 className="font-medium">Conexão via QR Code</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Certifique-se de que o bridge server está rodando. Clique em <strong>Gerar QR Code</strong> e escaneie com o seu WhatsApp.
+            Clique em <strong>Gerar QR Code</strong> e escaneie com o WhatsApp. A sessão é restaurada automaticamente após reinícios.
           </p>
         </div>
 
@@ -323,7 +317,6 @@ function WhatsAppQrPanel({
         {resolvedId && (
           <WhatsAppQrConnect
             channelId={resolvedId}
-            bridgeUrl={BRIDGE_URL}
             initialStatus={currentStatus}
             onConnected={handleConnected}
             onDisconnected={handleDisconnected}
@@ -394,7 +387,7 @@ function QrAiSettings({ channelId }: { channelId: string }) {
         {autoReply && (
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
             Configure a base de conhecimento na seção abaixo para que a IA responda com precisão.
-            Certifique-se de que <strong>GEMINI_API_KEY</strong> e <strong>SUPABASE_SERVICE_ROLE_KEY</strong> estão configurados no <code>server/.env</code> do servidor-mãe.
+            As credenciais privadas da IA e do banco devem estar configuradas somente no serviço Railway.
           </p>
         )}
       </div>
@@ -1051,12 +1044,10 @@ function SendMessageDialog({ open, onOpenChange, channelId, onSent }: {
     if (!to || !message) { toast.error("Preencha telefone e mensagem."); return; }
     setSending(true);
     try {
-      const { data, error } = await supabase.functions.invoke("whatsapp-send-message", { body: { channel_id: channelId, to, message } });
-      if (error) throw error;
-      if (data?.ok) { toast.success("Mensagem real enviada pela Cloud API."); onOpenChange(false); await onSent(); }
-      else toast.error(data?.error ?? "Falha ao enviar.");
-    } catch (e: any) {
-      toast.error(e.message ?? "Erro inesperado.");
+      const data = await sendWhatsAppMessage(channelId, { to, message });
+      if (data.ok) { toast.success("Mensagem enviada pelo provedor deste canal."); onOpenChange(false); await onSent(); }
+    } catch (error) {
+      toast.error(formatWhatsAppApiError(error));
     } finally {
       setSending(false);
     }
