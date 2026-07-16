@@ -1,15 +1,13 @@
-FROM node:20-slim
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    chromium \
-    && rm -rf /var/lib/apt/lists/*
+FROM node:22-slim
 
 WORKDIR /app
 
-COPY package.json ./
+# Build context é a raiz do repo — copiar explicitamente de server/
+COPY server/package.json ./
+COPY server/package-lock.json ./
 RUN npm install --omit=dev
 
-COPY . .
+COPY server/ .
 
 RUN mkdir -p /data
 
