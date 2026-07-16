@@ -1,5 +1,5 @@
 import { execSync } from "child_process";
-import { cpSync, mkdirSync, writeFileSync, existsSync } from "fs";
+import { cpSync, mkdirSync, writeFileSync, readFileSync } from "fs";
 import { resolve } from "path";
 
 const root = process.cwd();
@@ -22,7 +22,20 @@ cpSync(resolve(root, "dist/client"), staticDir, { recursive: true });
 // 4. Copy server bundle to function
 cpSync(resolve(root, "dist/server"), fnDir, { recursive: true });
 
-// 5. Node.js runtime with WebWorker launcher — suporta fetch handler + módulos Node.js
+// 5. Incluir package.json de produção na função para que o Node.js resolva módulos externos
+//    (react, @tanstack/react-router etc. são importados como externos nas chunks SSR)
+const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
+const prodPkg = {
+  name: pkg.name,
+  version: pkg.version,
+  type: "module",
+  dependencies: pkg.dependencies,
+};
+writeFileSync(resolve(fnDir, "package.json"), JSON.stringify(prodPkg, null, 2));
+console.log("Installing production dependencies in function directory...");
+execSync("npm install --omit=dev --prefer-offline", { cwd: fnDir, stdio: "inherit" });
+
+// 6. Node.js runtime com WebWorker launcher — suporta fetch handler + node_modules
 writeFileSync(
   resolve(fnDir, ".vc-config.json"),
   JSON.stringify({
@@ -32,22 +45,14 @@ writeFileSync(
   }, null, 2)
 );
 
-// 6. Write Vercel output config
+// 7. Write Vercel output config
 writeFileSync(
   resolve(outDir, "config.json"),
   JSON.stringify({
     version: 3,
     routes: [
-      // Serve static assets directly
-      {
-        src: "^/assets/(.*)$",
-        dest: "/assets/$1",
-      },
-      // All other routes go to the edge SSR function
-      {
-        src: "/(.*)",
-        dest: "/index",
-      },
+      { src: "^/assets/(.*)$", dest: "/assets/$1" },
+      { src: "/(.*)", dest: "/index" },
     ],
   }, null, 2)
 );
