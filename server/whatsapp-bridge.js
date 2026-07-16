@@ -29,7 +29,10 @@ const SUPABASE_URL = process.env.SUPABASE_URL ?? '';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? '';
 const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-1.5-flash';
-const BRIDGE_SECRET = process.env.BRIDGE_SECRET ?? '';
+// O segredo efetivo vem da tabela bridge_settings do Supabase (fonte da
+// verdade, carregado no boot); a env BRIDGE_SECRET é apenas fallback.
+let bridgeSecret = process.env.BRIDGE_SECRET ?? '';
+let bridgeSecretSource = bridgeSecret ? 'env' : 'none';
 const QR_EVENT_MODE = process.env.QR_EVENT_MODE ?? 'webhook';
 // SESSION_DATA_PATH é o nome preferido em produção; SESSIONS_DIR mantido por compatibilidade
 const SESSIONS_DIR = process.env.SESSION_DATA_PATH
@@ -53,8 +56,33 @@ const tenantAgent = createTenantAgent({
 /** @type {Map<string, Session>} */
 const sessions = new Map();
 
-if (!BRIDGE_SECRET) {
-  throw new Error('BRIDGE_SECRET é obrigatório. Defina a variável de ambiente BRIDGE_SECRET.');
+/**
+ * Carrega o segredo compartilhado da tabela bridge_settings (service role).
+ * Mantém bridge e Edge Functions sempre com o MESMO segredo sem nenhuma
+ * configuração manual; a env BRIDGE_SECRET fica como fallback.
+ */
+async function loadBridgeSecret() {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return;
+  try {
+    const authorization = SUPABASE_SERVICE_ROLE_KEY.startsWith('sb_secret_')
+      ? {}
+      : { Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` };
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/bridge_settings?id=eq.1&select=bridge_secret`, {
+      headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, ...authorization },
+    });
+    if (!res.ok) {
+      logger.warn({ status: res.status }, '[bridge] Não foi possível ler bridge_settings');
+      return;
+    }
+    const rows = await res.json().catch(() => []);
+    const secret = rows?.[0]?.bridge_secret;
+    if (secret) {
+      bridgeSecret = secret;
+      bridgeSecretSource = 'database';
+    }
+  } catch (err) {
+    logger.warn({ err }, '[bridge] Falha ao carregar segredo do Supabase');
+  }
 }
 
 /**
@@ -95,7 +123,7 @@ async function fetchBaileysVersion() {
 
 /** Notifica Supabase sobre eventos da sessão e retorna o JSON de resposta */
 async function notifySupabase(event, payload) {
-  if (!SUPABASE_URL || !BRIDGE_SECRET) {
+  if (!SUPABASE_URL || !bridgeSecret) {
     logger.warn('[bridge] SUPABASE_URL ou BRIDGE_SECRET não configurados — callback ignorado');
     return null;
   }
@@ -104,7 +132,7 @@ async function notifySupabase(event, payload) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-bridge-secret': BRIDGE_SECRET,
+        'x-bridge-secret': bridgeSecret,
       },
       body: JSON.stringify({ event, ...payload }),
     });
@@ -365,14 +393,14 @@ app.use(cors({
 app.use(express.json());
 
 app.use('/session', (req, res, next) => {
-  if (req.headers['x-bridge-secret'] !== BRIDGE_SECRET) {
+  if (!bridgeSecret || req.headers['x-bridge-secret'] !== bridgeSecret) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   return next();
 });
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, sessions: sessions.size, uptime: process.uptime(), eventMode: QR_EVENT_MODE, tenantAgent: tenantAgent.describe() });
+  res.json({ ok: true, sessions: sessions.size, uptime: process.uptime(), eventMode: QR_EVENT_MODE, secretSource: bridgeSecretSource, tenantAgent: tenantAgent.describe() });
 });
 
 /** Inicia sessão para um canal */
@@ -417,7 +445,7 @@ app.get('/session/:channelId/status', (req, res) => {
 
 /** Envia mensagem */
 app.post('/session/:channelId/send', async (req, res) => {
-  if (BRIDGE_SECRET && req.headers['x-bridge-secret'] !== BRIDGE_SECRET) {
+  if (!bridgeSecret || req.headers['x-bridge-secret'] !== bridgeSecret) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
@@ -483,9 +511,15 @@ async function restoreSessions() {
   }
 }
 
+await loadBridgeSecret();
+if (!bridgeSecret) {
+  throw new Error('Nenhum segredo disponível: configure a tabela bridge_settings no Supabase ou a env BRIDGE_SECRET.');
+}
+
 app.listen(PORT, BRIDGE_HOST, () => {
   logger.info(`[bridge] ChatFacil WhatsApp Bridge rodando em http://${BRIDGE_HOST}:${PORT}`);
   logger.info(`[bridge] Supabase URL: ${SUPABASE_URL || '(não configurado)'}`);
   logger.info(`[bridge] Session data path: ${SESSIONS_DIR}`);
+  logger.info(`[bridge] Segredo carregado de: ${bridgeSecretSource}`);
   restoreSessions().catch((err) => logger.error({ err }, '[bridge] Restauração de sessões falhou'));
 });

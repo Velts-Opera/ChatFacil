@@ -1,13 +1,15 @@
 import { adminClient } from "../_shared/auth.ts";
 import { json, text } from "../_shared/http.ts";
 import { upsertContactAndConversation } from "../_shared/whatsapp.ts";
+import { getBridgeConfig } from "../_shared/bridge-config.ts";
 
 const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-1.5-flash";
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return text("Method Not Allowed", 405);
 
-  const bridgeSecret = Deno.env.get("BRIDGE_SECRET") ?? "";
+  const admin = adminClient();
+  const { secret: bridgeSecret } = await getBridgeConfig(admin);
   const incomingSecret = req.headers.get("x-bridge-secret") ?? "";
 
   if (!bridgeSecret || incomingSecret !== bridgeSecret) {
@@ -23,8 +25,6 @@ Deno.serve(async (req) => {
 
   const { event, channelId } = body;
   if (!event || !channelId) return json({ error: "event e channelId obrigatórios" }, 400);
-
-  const admin = adminClient();
 
   try {
     if (event === "connected") {
