@@ -22,13 +22,13 @@ cpSync(resolve(root, "dist/client"), staticDir, { recursive: true });
 // 4. Copy server bundle to function
 cpSync(resolve(root, "dist/server"), fnDir, { recursive: true });
 
-// 5. Write Node.js serverless function config
+// 5. Node.js runtime with WebWorker launcher — suporta fetch handler + módulos Node.js
 writeFileSync(
   resolve(fnDir, ".vc-config.json"),
   JSON.stringify({
     runtime: "nodejs22.x",
     handler: "server.js",
-    launcherType: "Nodejs",
+    launcherType: "WebWorker",
   }, null, 2)
 );
 
