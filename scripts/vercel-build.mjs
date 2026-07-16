@@ -22,12 +22,13 @@ cpSync(resolve(root, "dist/client"), staticDir, { recursive: true });
 // 4. Copy server bundle to function
 cpSync(resolve(root, "dist/server"), fnDir, { recursive: true });
 
-// 5. Write edge function config (uses Web API fetch handler)
+// 5. Write Node.js serverless function config
 writeFileSync(
   resolve(fnDir, ".vc-config.json"),
   JSON.stringify({
-    runtime: "edge",
-    entrypoint: "server.js",
+    runtime: "nodejs22.x",
+    handler: "server.js",
+    launcherType: "Nodejs",
   }, null, 2)
 );
 
