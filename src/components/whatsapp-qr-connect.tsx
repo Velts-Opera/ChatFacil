@@ -8,7 +8,7 @@ import type { ConnectionStatus } from "@/lib/whatsapp/provider";
 
 interface Props {
   channelId: string;
-  bridgeUrl?: string;
+  bridgeUrl?: string; // ignorado — comunicação passa pela Edge Function whatsapp-qr-bridge
   initialStatus?: ConnectionStatus;
   onConnected?: (phoneNumber: string) => void;
   onDisconnected?: () => void;
@@ -55,7 +55,6 @@ export function WhatsAppQrConnect({ channelId, bridgeUrl, initialStatus, onConne
   const poll = useCallback(async () => {
     const data = await provider.current.getQrCode();
     if (data.status === "error") {
-      // Bridge indisponível — para o polling e marca offline
       stopPoll();
       setBridgeOnline(false);
       return;
@@ -82,7 +81,7 @@ export function WhatsAppQrConnect({ channelId, bridgeUrl, initialStatus, onConne
     poll();
   }, [poll, stopPoll]);
 
-  // Verifica o bridge continuamente para recuperar após ele ser iniciado
+  // Verifica disponibilidade via Edge Function (nunca chama o bridge diretamente do browser)
   useEffect(() => {
     let cancelled = false;
     const check = () => provider.current.checkHealth()
