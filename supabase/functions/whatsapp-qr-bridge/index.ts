@@ -1,10 +1,11 @@
 // Proxy autenticado entre o frontend e o WhatsApp Bridge (Baileys).
 // Cada usuário só consegue operar canais QR da PRÓPRIA empresa:
 // o JWT é validado, o canal é conferido contra company_id e só então
-// a chamada é repassada ao bridge com o BRIDGE_SECRET (que nunca
+// a chamada é repassada ao bridge com o segredo compartilhado (que nunca
 // chega ao navegador).
 import { corsHeaders, json } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
+import { getBridgeConfig } from "../_shared/bridge-config.ts";
 
 type Action = "start" | "qr" | "status" | "send" | "disconnect" | "health";
 
@@ -15,16 +16,12 @@ interface Body {
   message?: string;
 }
 
-// Aceita os dois nomes de secret para a URL do bridge hospedado
-const BRIDGE_URL = (Deno.env.get("WA_BRIDGE_URL") ?? Deno.env.get("BRIDGE_URL") ?? "").replace(/\/$/, "");
-const BRIDGE_SECRET = Deno.env.get("BRIDGE_SECRET") ?? "";
-
-async function bridgeFetch(path: string, init: RequestInit = {}) {
-  const res = await fetch(`${BRIDGE_URL}${path}`, {
+async function bridgeFetch(config: { url: string; secret: string }, path: string, init: RequestInit = {}) {
+  const res = await fetch(`${config.url}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      "x-bridge-secret": BRIDGE_SECRET,
+      "x-bridge-secret": config.secret,
       ...(init.headers ?? {}),
     },
     signal: AbortSignal.timeout(15_000),
@@ -37,13 +34,6 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
-  if (!BRIDGE_URL || !BRIDGE_SECRET) {
-    return json({
-      error: "Bridge não configurado. Defina WA_BRIDGE_URL e BRIDGE_SECRET nos secrets das Edge Functions.",
-      code: "bridge_not_configured",
-    }, 503);
-  }
-
   let auth;
   try {
     auth = await requireUser(req);
@@ -52,11 +42,19 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const config = await getBridgeConfig(auth.admin);
+    if (!config.url || !config.secret) {
+      return json({
+        error: "Bridge não configurado. Cadastre a tabela bridge_settings ou os secrets WA_BRIDGE_URL/BRIDGE_SECRET.",
+        code: "bridge_not_configured",
+      }, 503);
+    }
+
     const body = (await req.json().catch(() => ({}))) as Body;
     const { action } = body;
 
     if (action === "health") {
-      const { status, body: result } = await bridgeFetch("/health");
+      const { status, body: result } = await bridgeFetch(config, "/health");
       return json({ ok: status === 200, bridge: result }, 200);
     }
 
@@ -75,30 +73,30 @@ Deno.serve(async (req) => {
 
     switch (action) {
       case "start": {
-        const { status, body: result } = await bridgeFetch("/session/start", {
+        const { status, body: result } = await bridgeFetch(config, "/session/start", {
           method: "POST",
           body: JSON.stringify({ channelId: channel.id }),
         });
         return json(result ?? { error: "Bridge sem resposta" }, status);
       }
       case "qr": {
-        const { status, body: result } = await bridgeFetch(`/session/${channel.id}/qr`);
+        const { status, body: result } = await bridgeFetch(config, `/session/${channel.id}/qr`);
         return json(result ?? { error: "Bridge sem resposta" }, status);
       }
       case "status": {
-        const { status, body: result } = await bridgeFetch(`/session/${channel.id}/status`);
+        const { status, body: result } = await bridgeFetch(config, `/session/${channel.id}/status`);
         return json(result ?? { error: "Bridge sem resposta" }, status);
       }
       case "send": {
         if (!body.to || !body.message) return json({ error: "to e message são obrigatórios." }, 400);
-        const { status, body: result } = await bridgeFetch(`/session/${channel.id}/send`, {
+        const { status, body: result } = await bridgeFetch(config, `/session/${channel.id}/send`, {
           method: "POST",
           body: JSON.stringify({ to: body.to, message: body.message }),
         });
         return json(result ?? { error: "Bridge sem resposta" }, status);
       }
       case "disconnect": {
-        const { status, body: result } = await bridgeFetch(`/session/${channel.id}/disconnect`, {
+        const { status, body: result } = await bridgeFetch(config, `/session/${channel.id}/disconnect`, {
           method: "POST",
           body: JSON.stringify({}),
         });

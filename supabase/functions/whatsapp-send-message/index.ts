@@ -1,6 +1,7 @@
 import { corsHeaders, cleanPhone, json } from "../_shared/http.ts";
 import { requireUser } from "../_shared/auth.ts";
 import { getChannelSecret, sendWhatsAppText, upsertContactAndConversation } from "../_shared/whatsapp.ts";
+import { getBridgeConfig } from "../_shared/bridge-config.ts";
 
 interface Body {
   channel_id: string;
@@ -63,14 +64,13 @@ Deno.serve(async (req) => {
     let metaJson: any = null;
     if (isQrChannel) {
       // Canal QR: envia pelo bridge Baileys hospedado, na sessão exclusiva do canal.
-      const bridgeUrl = (Deno.env.get("WA_BRIDGE_URL") ?? Deno.env.get("BRIDGE_URL") ?? "").replace(/\/$/, "");
-      const bridgeSecret = Deno.env.get("BRIDGE_SECRET") ?? "";
-      if (!bridgeUrl || !bridgeSecret) {
-        return json({ error: "Bridge não configurado. Defina WA_BRIDGE_URL e BRIDGE_SECRET." }, 503);
+      const bridgeConfig = await getBridgeConfig(admin);
+      if (!bridgeConfig.url || !bridgeConfig.secret) {
+        return json({ error: "Bridge não configurado. Cadastre a tabela bridge_settings ou os secrets WA_BRIDGE_URL/BRIDGE_SECRET." }, 503);
       }
-      const bridgeRes = await fetch(`${bridgeUrl}/session/${channel.id}/send`, {
+      const bridgeRes = await fetch(`${bridgeConfig.url}/session/${channel.id}/send`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-bridge-secret": bridgeSecret },
+        headers: { "Content-Type": "application/json", "x-bridge-secret": bridgeConfig.secret },
         body: JSON.stringify({ to, message: body.message.trim() }),
         signal: AbortSignal.timeout(20_000),
       }).catch((e) => ({ ok: false, status: 502, json: async () => ({ error: String(e) }) }) as any);
