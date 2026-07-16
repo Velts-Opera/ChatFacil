@@ -165,5 +165,31 @@ test("CORS responde OPTIONS e aceita apenas Authorization e Content-Type", async
       response.headers.get("access-control-allow-headers"),
       "Authorization,Content-Type",
     );
+    assert.equal(response.headers.get("access-control-allow-credentials"), "true");
+    assert.equal(response.headers.get("access-control-allow-origin"), "https://app.example.com");
+  });
+});
+
+test("CORS retorna 204 sem headers para origem não permitida no preflight", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/whatsapp/channels/${CHANNEL_A}/connect`, {
+      method: "OPTIONS",
+      headers: { Origin: "https://evil.example.com" },
+    });
+    assert.equal(response.status, 204);
+    assert.equal(response.headers.get("access-control-allow-origin"), null);
+  });
+});
+
+test("CORS retorna Access-Control-Allow-Credentials em requisições autenticadas", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/whatsapp/channels/${CHANNEL_A}/status`, {
+      headers: {
+        Origin: "https://app.example.com",
+        Authorization: "Bearer token-a",
+      },
+    });
+    assert.equal(response.headers.get("access-control-allow-credentials"), "true");
+    assert.equal(response.headers.get("access-control-allow-origin"), "https://app.example.com");
   });
 });

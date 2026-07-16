@@ -21,23 +21,27 @@ export function createWhatsappApp({ gateway, sessionManager, allowedOrigins, log
 
   app.use((req, res, next) => {
     const origin = req.headers.origin;
+    if (req.method === "OPTIONS") {
+      if (origin && origins.includes(origin)) {
+        res.setHeader("Access-Control-Allow-Origin", origin);
+        res.setHeader("Vary", "Origin");
+        res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "Authorization,Content-Type");
+        res.setHeader("Access-Control-Allow-Credentials", "true");
+        res.setHeader("Access-Control-Max-Age", "86400");
+      }
+      return res.status(204).end();
+    }
     if (origin && !origins.includes(origin)) {
-      return res
-        .status(403)
-        .json({
-          error: {
-            code: "CORS_ORIGIN_DENIED",
-            message: "Origem não permitida por ALLOWED_ORIGINS.",
-          },
-        });
+      return res.status(403).json({
+        error: { code: "CORS_ORIGIN_DENIED", message: "Origem não permitida por ALLOWED_ORIGINS." },
+      });
     }
     if (origin) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
+      res.setHeader("Access-Control-Allow-Credentials", "true");
     }
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Authorization,Content-Type");
-    if (req.method === "OPTIONS") return res.status(204).end();
     return next();
   });
   app.use(express.json({ limit: "64kb" }));
