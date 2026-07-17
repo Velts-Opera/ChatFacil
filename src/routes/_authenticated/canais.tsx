@@ -422,14 +422,17 @@ function ChannelCard({ icon, name, description, status, disabled, onClick }: {
   );
 }
 
-function StatusBadge({ status }: { status: ChannelStatus }) {
-  const map: Record<ChannelStatus, { label: string; cls: string; icon?: React.ReactNode }> = {
+function StatusBadge({ status }: { status: ChannelStatus | string }) {
+  const map: Record<string, { label: string; cls: string; icon?: React.ReactNode }> = {
     disconnected: { label: "Desconectado", cls: "bg-muted text-muted-foreground" },
     connecting: { label: "Conectando", cls: "bg-amber-100 text-amber-800", icon: <Loader2 className="h-3 w-3 animate-spin" /> },
+    qr_pending: { label: "Aguardando QR", cls: "bg-amber-100 text-amber-800", icon: <Loader2 className="h-3 w-3 animate-spin" /> },
+    reconnecting: { label: "Reconectando", cls: "bg-amber-100 text-amber-800", icon: <Loader2 className="h-3 w-3 animate-spin" /> },
     connected: { label: "Conectado", cls: "bg-green-100 text-green-800", icon: <CheckCircle2 className="h-3 w-3" /> },
     error: { label: "Erro", cls: "bg-red-100 text-red-800", icon: <TriangleAlert className="h-3 w-3" /> },
   };
-  const s = map[status];
+  // Fallback defensivo: qualquer status desconhecido vindo do banco não pode derrubar a página
+  const s = map[status] ?? { label: status || "Desconhecido", cls: "bg-muted text-muted-foreground" };
   return <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", s.cls)}>{s.icon}{s.label}</span>;
 }
 
