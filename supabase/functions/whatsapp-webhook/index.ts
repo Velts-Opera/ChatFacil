@@ -18,6 +18,12 @@ Deno.serve(async (req) => {
 
     if (mode !== "subscribe" || !token || !challenge) return text("Bad Request", 400);
 
+    // Token app-level (Embedded Signup): a Meta verifica a URL antes de existir canal no banco
+    const appLevelToken = Deno.env.get("META_WEBHOOK_VERIFY_TOKEN");
+    if (appLevelToken && constantTimeEqual(token, appLevelToken)) {
+      return text(challenge, 200);
+    }
+
     const { data: channel, error } = await admin
       .from("channels")
       .select("id, status")

@@ -1,30 +1,72 @@
 -- Railway passa a ser a API oficial do WhatsApp QR/Baileys.
 -- O vínculo do agente fica explícito e sempre limitado à empresa do canal.
 
-ALTER TABLE public.channels
-  ADD COLUMN IF NOT EXISTS agent_id UUID REFERENCES public.ai_agent_settings(id) ON DELETE SET NULL;
+DO $$
+DECLARE
+  has_agent_settings boolean;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'ai_agent_settings'
+  ) INTO has_agent_settings;
 
-UPDATE public.channels AS channel
-SET agent_id = agent.id
-FROM public.ai_agent_settings AS agent
-WHERE channel.agent_id IS NULL
-  AND agent.company_id = channel.company_id;
+  -- agent_id em channels
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'channels' AND column_name = 'agent_id'
+  ) THEN
+    IF has_agent_settings THEN
+      ALTER TABLE public.channels
+        ADD COLUMN agent_id UUID REFERENCES public.ai_agent_settings(id) ON DELETE SET NULL;
+    ELSE
+      ALTER TABLE public.channels ADD COLUMN agent_id UUID;
+    END IF;
+  END IF;
+
+  IF has_agent_settings THEN
+    UPDATE public.channels AS channel
+    SET agent_id = agent.id
+    FROM public.ai_agent_settings AS agent
+    WHERE channel.agent_id IS NULL
+      AND agent.company_id = channel.company_id;
+  END IF;
+
+  -- agent_id em messages
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'messages' AND column_name = 'agent_id'
+  ) THEN
+    IF has_agent_settings THEN
+      ALTER TABLE public.messages
+        ADD COLUMN agent_id UUID REFERENCES public.ai_agent_settings(id) ON DELETE SET NULL;
+    ELSE
+      ALTER TABLE public.messages ADD COLUMN agent_id UUID;
+    END IF;
+  END IF;
+
+  -- agent_id em ai_interactions (somente se a tabela existir)
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'ai_interactions'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'ai_interactions' AND column_name = 'agent_id'
+  ) THEN
+    IF has_agent_settings THEN
+      ALTER TABLE public.ai_interactions
+        ADD COLUMN agent_id UUID REFERENCES public.ai_agent_settings(id) ON DELETE SET NULL;
+    ELSE
+      ALTER TABLE public.ai_interactions ADD COLUMN agent_id UUID;
+    END IF;
+  END IF;
+
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_channels_company_agent
   ON public.channels(company_id, agent_id);
 
-ALTER TABLE public.messages
-  ADD COLUMN IF NOT EXISTS agent_id UUID REFERENCES public.ai_agent_settings(id) ON DELETE SET NULL;
-
-ALTER TABLE public.ai_interactions
-  ADD COLUMN IF NOT EXISTS agent_id UUID REFERENCES public.ai_agent_settings(id) ON DELETE SET NULL;
-
 CREATE INDEX IF NOT EXISTS idx_messages_agent_created
   ON public.messages(agent_id, created_at DESC)
-  WHERE agent_id IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_ai_interactions_agent_created
-  ON public.ai_interactions(agent_id, created_at DESC)
   WHERE agent_id IS NOT NULL;
 
 CREATE OR REPLACE FUNCTION public.validate_channel_agent_company()
@@ -33,7 +75,10 @@ LANGUAGE plpgsql
 SET search_path = public
 AS $$
 BEGIN
-  IF NEW.agent_id IS NOT NULL AND NOT EXISTS (
+  IF NEW.agent_id IS NOT NULL AND EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'ai_agent_settings'
+  ) AND NOT EXISTS (
     SELECT 1
     FROM public.ai_agent_settings AS agent
     WHERE agent.id = NEW.agent_id
@@ -51,8 +96,21 @@ CREATE TRIGGER trg_channels_validate_agent_company
   BEFORE INSERT OR UPDATE OF company_id, agent_id ON public.channels
   FOR EACH ROW EXECUTE FUNCTION public.validate_channel_agent_company();
 
-ALTER TABLE public.channels DROP COLUMN IF EXISTS bridge_url;
+-- Remove bridge_url (Railway substitui o bridge direto)
+DO $$
+BEGIN
+  -- Derruba views que dependem de channels antes de dropar coluna
+  DROP VIEW IF EXISTS public.channel_public_view;
 
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'channels' AND column_name = 'bridge_url'
+  ) THEN
+    ALTER TABLE public.channels DROP COLUMN bridge_url;
+  END IF;
+END $$;
+
+-- Recria a view com agent_id
 CREATE OR REPLACE VIEW public.channel_public_view
 WITH (security_invoker = true) AS
 SELECT

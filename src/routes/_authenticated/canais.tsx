@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { WhatsAppQrConnect } from "@/components/whatsapp-qr-connect";
+import { useSuperAdmin } from "@/hooks/use-super-admin";
 import { MetaOnboardingLink } from "@/components/meta-embedded-signup";
 import type { ConnectionStatus } from "@/lib/whatsapp/provider";
 import { formatWhatsAppApiError, sendWhatsAppMessage } from "@/lib/whatsapp/api-client";
@@ -134,6 +135,7 @@ function CanaisPage() {
   const [whatsChannel, setWhatsChannel] = useState<Channel | null>(null);
   const [qrChannel, setQrChannel] = useState<Channel | null>(null);
   const [loading, setLoading] = useState(true);
+  const { isSuperAdmin } = useSuperAdmin();
 
   async function loadChannel() {
     setLoading(true);
@@ -172,7 +174,8 @@ function CanaisPage() {
     loadQrChannel();
   }, []);
 
-  if (selected === "whatsapp") {
+  // Blindagem: cliente final nunca abre o painel de credenciais, nem forçando o estado
+  if (selected === "whatsapp" && isSuperAdmin) {
     return <WhatsAppPanel channel={whatsChannel} loading={loading} onBack={() => setSelected(null)} onChanged={loadChannel} />;
   }
 
@@ -184,26 +187,32 @@ function CanaisPage() {
     <div className="space-y-6 p-4 sm:p-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Canais</h1>
-        <p className="text-sm text-muted-foreground">Conecte canais reais de atendimento. WhatsApp já usa Cloud API, webhook, banco e caixa de entrada.</p>
+        <p className="text-sm text-muted-foreground">
+          {isSuperAdmin
+            ? "Visão do servidor-mãe: conecte via Cloud API oficial ou QR."
+            : "Conecte seu WhatsApp e comece a atender. Leva menos de 1 minuto."}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <ChannelCard
           icon={<MessageCircle className="h-5 w-5" />}
-          name="WhatsApp"
-          description="Cloud API oficial, webhook e IA."
-          status={whatsChannel?.status ?? "disconnected"}
-          onClick={() => setSelected("whatsapp")}
-        />
-        <ChannelCard
-          icon={<QrCode className="h-5 w-5" />}
-          name="WhatsApp Web (QR legado)"
-          description="Sessão local; não é Cloud API nem Calling API."
+          name="Meu WhatsApp"
+          description="Conecte escaneando um QR Code, como no WhatsApp Web."
           status={(qrChannel?.status as ChannelStatus) ?? "disconnected"}
           onClick={() => setSelected("whatsapp-qr")}
         />
-        <ChannelCard icon={<Instagram className="h-5 w-5" />} name="Instagram" description="Em breve — Instagram Graph API." status="disconnected" disabled />
-        <ChannelCard icon={<MessagesSquare className="h-5 w-5" />} name="Messenger" description="Em breve — Messenger Platform." status="disconnected" disabled />
+        {isSuperAdmin && (
+          <ChannelCard
+            icon={<ShieldCheck className="h-5 w-5" />}
+            name="WhatsApp Cloud API (admin)"
+            description="Credenciais Meta, webhook e Embedded Signup."
+            status={whatsChannel?.status ?? "disconnected"}
+            onClick={() => setSelected("whatsapp")}
+          />
+        )}
+        <ChannelCard icon={<Instagram className="h-5 w-5" />} name="Instagram" description="Em breve." status="disconnected" disabled />
+        <ChannelCard icon={<MessagesSquare className="h-5 w-5" />} name="Messenger" description="Em breve." status="disconnected" disabled />
       </div>
     </div>
   );
@@ -295,16 +304,16 @@ function WhatsAppQrPanel({
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">WhatsApp via QR Code</h1>
-          <p className="text-sm text-muted-foreground">Sessão Baileys exclusiva deste canal, mantida pela API permanente no Railway.</p>
+          <h1 className="text-xl font-semibold tracking-tight">Conectar meu WhatsApp</h1>
+          <p className="text-sm text-muted-foreground">Escaneie o QR Code com seu celular. A conexão fica ativa sozinha.</p>
         </div>
       </div>
 
       <div className="rounded-xl border bg-card p-6 shadow-sm">
         <div className="mb-4">
-          <h2 className="font-medium">Conexão via QR Code</h2>
+          <h2 className="font-medium">Passo único</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Clique em <strong>Gerar QR Code</strong> e escaneie com o WhatsApp. A sessão é restaurada automaticamente após reinícios.
+            Clique em <strong>Gerar QR Code</strong>. No celular, abra o WhatsApp → <strong>Aparelhos conectados</strong> → <strong>Conectar aparelho</strong> e aponte a câmera.
           </p>
         </div>
 
@@ -436,6 +445,8 @@ function StatusBadge({ status }: { status: ChannelStatus | string }) {
   return <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", s.cls)}>{s.icon}{s.label}</span>;
 }
 
+// Painel Cloud API: só o admin da plataforma (servidor-mãe) configura credenciais.
+// O cliente final nunca vê token/IDs da Meta — ele conecta pelo QR.
 function WhatsAppPanel({ channel, loading, onBack, onChanged }: {
   channel: Channel | null;
   loading: boolean;

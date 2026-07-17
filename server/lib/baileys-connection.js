@@ -1,5 +1,9 @@
 import fs from "node:fs";
-import { makeWASocket, useMultiFileAuthState } from "@whiskeysockets/baileys";
+import {
+  makeWASocket,
+  useMultiFileAuthState,
+  fetchLatestBaileysVersion,
+} from "@whiskeysockets/baileys";
 import { Boom } from "@hapi/boom";
 import pino from "pino";
 import {
@@ -12,13 +16,35 @@ import {
 const VERSION_URL =
   "https://raw.githubusercontent.com/WhiskeySockets/Baileys/master/src/Defaults/baileys-version.json";
 
+/**
+ * Resolve a versão do WhatsApp Web para o handshake.
+ * Ordem: helper oficial da lib -> JSON do repo -> versão embutida na lib instalada.
+ * Puxar só do master quebra o pareamento quando o master avança além da lib instalada.
+ */
 async function baileysVersion(fetchImpl) {
-  const response = await fetchImpl(VERSION_URL, { headers: { accept: "application/json" } });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok || !Array.isArray(payload?.version) || payload.version.length !== 3) {
-    throw new Error(`Não foi possível obter a versão do Baileys (HTTP ${response.status}).`);
+  try {
+    const { version } = await fetchLatestBaileysVersion();
+    if (Array.isArray(version) && version.length === 3) return version;
+  } catch {
+    // segue para o fallback
   }
-  return payload.version;
+
+  try {
+    const response = await fetchImpl(VERSION_URL, { headers: { accept: "application/json" } });
+    const payload = await response.json().catch(() => null);
+    if (response.ok && Array.isArray(payload?.version) && payload.version.length === 3) {
+      return payload.version;
+    }
+  } catch {
+    // segue para o fallback
+  }
+
+  // Último recurso: a versão que a própria lib instalada considera padrão
+  const { DEFAULT_CONNECTION_CONFIG } = await import("@whiskeysockets/baileys");
+  const fallback = DEFAULT_CONNECTION_CONFIG?.version;
+  if (Array.isArray(fallback) && fallback.length === 3) return fallback;
+
+  throw new Error("Não foi possível resolver a versão do WhatsApp Web.");
 }
 
 export async function createBaileysConnection({
@@ -41,7 +67,12 @@ export async function createBaileysConnection({
     auth: authState.state,
     printQRInTerminal: false,
     logger: pino({ level: "silent" }),
-    browser: ["ChatFacil", "Chrome", "120.0.0"],
+    // Fingerprint de navegador reconhecido: strings custom fazem o WhatsApp recusar o pareamento
+    browser: ["Ubuntu", "Chrome", "120.0.0"],
+    syncFullHistory: false,
+    markOnlineOnConnect: false,
+    connectTimeoutMs: 60_000,
+    keepAliveIntervalMs: 25_000,
   });
 
   socket.ev.on("creds.update", authState.saveCreds);
