@@ -147,6 +147,9 @@ export class SessionManager {
       status: "reconnecting",
       last_error: details.errorMessage,
     });
+    // 515 (restartRequired) acontece logo após ler o QR: o WhatsApp exige reabrir NA HORA.
+    // Esperar os 5s padrão invalida o handshake pendente e causa o loop "conectando e cai".
+    const delay = details.reason === 515 ? 0 : this.reconnectDelayMs;
     session.reconnectTimer = setTimeout(async () => {
       if (session.stopped || this.sessions.get(session.channelId) !== session) return;
       this.sessions.delete(session.channelId);
@@ -159,7 +162,7 @@ export class SessionManager {
       } catch (error) {
         this.logger?.error?.({ error, channelId: session.channelId }, "Falha ao restaurar sessão");
       }
-    }, this.reconnectDelayMs);
+    }, delay);
   }
 
   async handleInbound(session, message) {
