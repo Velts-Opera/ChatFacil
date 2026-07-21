@@ -292,9 +292,9 @@ async function tryAutomationOrAiReply(
     return;
   }
 
-  const apiKey = Deno.env.get("OPENAI_API_KEY");
+  const apiKey = Deno.env.get("AI_API_KEY") ?? Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) {
-    await admin.from("conversations").update({ ai_handling: false, status: "pendente", handoff_reason: "OPENAI_API_KEY ausente" }).eq("id", conversationId);
+    await admin.from("conversations").update({ ai_handling: false, status: "pendente", handoff_reason: "AI_API_KEY ausente" }).eq("id", conversationId);
     return;
   }
 
@@ -342,8 +342,10 @@ async function generateAiReply(admin: any, channel: any, conversationId: string,
     { role: "user", content: userMessage },
   ];
 
-  const model = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const provider = (Deno.env.get("AI_PROVIDER") ?? "openai").toLowerCase();
+  const model = Deno.env.get("AI_MODEL") ?? Deno.env.get("OPENAI_MODEL") ?? (provider === "alibaba" ? "qwen-plus" : "gpt-4o-mini");
+  const baseUrl = (Deno.env.get("AI_BASE_URL") ?? "https://api.openai.com/v1").replace(/\/+$/, "");
+  const res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -364,7 +366,7 @@ async function generateAiReply(admin: any, channel: any, conversationId: string,
       status: "error",
       model,
       input: userMessage,
-      error_message: out?.error?.message ?? `OpenAI HTTP ${res.status}`,
+      error_message: out?.error?.message ?? `${provider} HTTP ${res.status}`,
     });
     return null;
   }
