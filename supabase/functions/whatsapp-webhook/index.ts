@@ -1,5 +1,5 @@
 import { adminClient } from "../_shared/auth.ts";
-import { isAiAutoReplyEnabled, resolveAiProviderConfig, type AiProviderConfig } from "../_shared/ai-provider.ts";
+import { AI_REQUEST_TIMEOUT_MS, isAiAutoReplyEnabled, parseRetryAfterMs, resolveAiProviderConfig, type AiProviderConfig } from "../_shared/ai-provider.ts";
 import { constantTimeEqual, json, sha256HmacHex, text } from "../_shared/http.ts";
 import {
   extractMessageText,
@@ -87,35 +87,13 @@ Deno.serve(async (req) => {
       }
     }
 
-    const entries = Array.isArray(payload?.entry) ? payload.entry : [];
-    for (const entry of entries) {
-      const changes = Array.isArray(entry?.changes) ? entry.changes : [];
-      for (const change of changes) {
-        const value = change?.value ?? {};
-        const phoneNumberId: string | undefined = value?.metadata?.phone_number_id;
+    const processing = processWebhookPayload(admin, payload);
+    const edgeRuntime = (globalThis as typeof globalThis & {
+      EdgeRuntime?: { waitUntil(promise: Promise<unknown>): void };
+    }).EdgeRuntime;
 
-        const { data: channel } = phoneNumberId
-          ? await admin.from("channels").select("*").eq("type", "whatsapp").eq("phone_number_id", phoneNumberId).maybeSingle()
-          : { data: null };
-
-        await logWebhook(admin, channel, change?.field ?? "unknown", "received", value);
-        if (!channel) continue;
-
-        const messages = Array.isArray(value?.messages) ? value.messages : [];
-        const contacts = Array.isArray(value?.contacts) ? value.contacts : [];
-
-        for (const msg of messages) {
-          await processIncomingMessage(admin, channel, msg, contacts, value);
-        }
-
-        const statuses = Array.isArray(value?.statuses) ? value.statuses : [];
-        for (const st of statuses) {
-          await processStatus(admin, channel, st);
-        }
-
-        await admin.from("channels").update({ last_sync_at: new Date().toISOString() }).eq("id", channel.id);
-      }
-    }
+    if (edgeRuntime?.waitUntil) edgeRuntime.waitUntil(processing);
+    else await processing;
   } catch (e) {
     console.error("whatsapp-webhook processing error", e);
     await admin.from("webhook_events").insert({
@@ -313,7 +291,7 @@ async function tryAutomationOrAiReply(
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Configuração de IA inválida";
-    await admin.from("ai_interactions").insert({
+    await recordAiInteraction(admin, {
       company_id: channel.company_id,
       channel_id: channel.id,
       conversation_id: conversationId,
@@ -373,7 +351,7 @@ async function generateAiReply(admin: any, channel: any, conversationId: string,
   const { provider, model, apiKey, chatCompletionsUrl } = aiConfig;
   let res: Response;
   try {
-    res = await fetch(chatCompletionsUrl, {
+    res = await fetchAiWithRetry(chatCompletionsUrl, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -385,7 +363,7 @@ async function generateAiReply(admin: any, channel: any, conversationId: string,
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : "erro de rede desconhecido";
-    await admin.from("ai_interactions").insert({
+    await recordAiInteraction(admin, {
       company_id: channel.company_id,
       channel_id: channel.id,
       conversation_id: conversationId,
@@ -400,7 +378,7 @@ async function generateAiReply(admin: any, channel: any, conversationId: string,
 
   const out = await res.json().catch(() => ({}));
   if (!res.ok) {
-    await admin.from("ai_interactions").insert({
+    await recordAiInteraction(admin, {
       company_id: channel.company_id,
       channel_id: channel.id,
       conversation_id: conversationId,
@@ -414,12 +392,12 @@ async function generateAiReply(admin: any, channel: any, conversationId: string,
   }
 
   const reply = String(out?.choices?.[0]?.message?.content ?? "").trim();
-  await admin.from("ai_interactions").insert({
+  const interactionRecorded = await recordAiInteraction(admin, {
     company_id: channel.company_id,
     channel_id: channel.id,
     conversation_id: conversationId,
     inbound_message_id: inboundMessageId,
-    status: reply ? "completed" : "empty",
+    status: reply ? "generated" : "empty",
     model,
     prompt_tokens: out?.usage?.prompt_tokens ?? null,
     completion_tokens: out?.usage?.completion_tokens ?? null,
@@ -427,7 +405,30 @@ async function generateAiReply(admin: any, channel: any, conversationId: string,
     output: reply,
   });
 
-  return reply || null;
+  return interactionRecorded ? reply || null : null;
+}
+
+async function fetchAiWithRetry(url: string, init: RequestInit): Promise<Response> {
+  const signal = AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS);
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const response = await fetch(url, { ...init, signal });
+      const retryable = response.status === 429 || response.status >= 500;
+      if (!retryable || attempt === 2) return response;
+      const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"));
+      if (retryAfterMs !== null && retryAfterMs > 2_000) return response;
+      await response.body?.cancel().catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, retryAfterMs ?? 250 + Math.floor(Math.random() * 250)));
+    } catch (error) {
+      lastError = error;
+      if (attempt === 2 || signal.aborted) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250 + Math.floor(Math.random() * 250)));
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Falha desconhecida ao chamar o provedor de IA");
 }
 
 async function sendBotReply(
@@ -444,6 +445,9 @@ async function sendBotReply(
   const secret = await getChannelSecret(admin, channel.id);
   if (!secret?.access_token || !channel.phone_number_id) {
     const now = new Date().toISOString();
+    if (source === "ai") {
+      await markAiDeliveryFailed(admin, inboundMessageId, "Canal sem credenciais Meta completas para envio");
+    }
     await admin.from("webhook_events").insert({
       company_id: channel.company_id,
       channel_id: channel.id,
@@ -465,10 +469,35 @@ async function sendBotReply(
     return;
   }
 
-  const meta = await sendWhatsAppText(secret.access_token, channel.phone_number_id, waId, reply);
   const now = new Date().toISOString();
+  let meta: Awaited<ReturnType<typeof sendWhatsAppText>>;
+  try {
+    meta = await sendWhatsAppText(secret.access_token, channel.phone_number_id, waId, reply, AbortSignal.timeout(10_000));
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "erro de rede desconhecido";
+    if (source === "ai") await markAiDeliveryFailed(admin, inboundMessageId, `Falha de rede ao chamar Meta: ${detail}`);
+    await admin.from("webhook_events").insert({
+      company_id: channel.company_id,
+      channel_id: channel.id,
+      event_type: `${source}_reply_failed`,
+      status: "error",
+      source: "app",
+      payload: { to: waId },
+      error_message: `Falha de rede ao chamar Meta: ${detail}`,
+      processed_at: now,
+    });
+    await admin.from("conversations").update({
+      ai_handling: false,
+      status: "pendente",
+      handoff_reason: "Falha ao enviar resposta automática",
+    }).eq("id", conversationId);
+    return;
+  }
 
   if (!meta.ok) {
+    if (source === "ai") {
+      await markAiDeliveryFailed(admin, inboundMessageId, meta.json?.error?.message ?? `Meta HTTP ${meta.status}`);
+    }
     await admin.from("webhook_events").insert({
       company_id: channel.company_id,
       channel_id: channel.id,
@@ -483,7 +512,7 @@ async function sendBotReply(
     return;
   }
 
-  const { data: outbound } = await admin.from("messages").insert({
+  const { data: outbound, error: outboundError } = await admin.from("messages").insert({
     company_id: channel.company_id,
     channel_id: channel.id,
     conversation_id: conversationId,
@@ -498,9 +527,28 @@ async function sendBotReply(
     ai_generated: source === "ai",
   }).select("id").single();
 
-  await admin.from("ai_interactions")
-    .update({ outbound_message_id: outbound?.id ?? null })
-    .eq("inbound_message_id", inboundMessageId);
+  if (outboundError) {
+    const persistenceError = "Resposta enviada pela Meta, mas não foi gravada no banco";
+    if (source === "ai") await markAiPersistenceFailed(admin, inboundMessageId, persistenceError);
+    await admin.from("webhook_events").insert({
+      company_id: channel.company_id,
+      channel_id: channel.id,
+      event_type: `${source}_reply_persistence_failed`,
+      status: "error",
+      source: "app",
+      payload: { meta_message_id: meta.json?.messages?.[0]?.id ?? null },
+      error_message: outboundError.message,
+      processed_at: now,
+    });
+    await admin.from("conversations").update({
+      ai_handling: false,
+      status: "pendente",
+      handoff_reason: persistenceError,
+    }).eq("id", conversationId);
+    return;
+  }
+
+  if (source === "ai") await markAiDeliveryCompleted(admin, inboundMessageId, outbound?.id ?? null);
 
   await admin.from("conversations").update({
     ai_handling: source === "ai",
@@ -522,4 +570,75 @@ async function sendBotReply(
     payload: { to: waId, meta: meta.json },
     processed_at: now,
   });
+}
+
+async function processWebhookPayload(admin: any, payload: any) {
+  try {
+    const entries = Array.isArray(payload?.entry) ? payload.entry : [];
+    for (const entry of entries) {
+      const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+      for (const change of changes) {
+        const value = change?.value ?? {};
+        const phoneNumberId: string | undefined = value?.metadata?.phone_number_id;
+
+        const { data: channel } = phoneNumberId
+          ? await admin.from("channels").select("*").eq("type", "whatsapp").eq("phone_number_id", phoneNumberId).maybeSingle()
+          : { data: null };
+
+        await logWebhook(admin, channel, change?.field ?? "unknown", "received", value);
+        if (!channel) continue;
+
+        const messages = Array.isArray(value?.messages) ? value.messages : [];
+        const contacts = Array.isArray(value?.contacts) ? value.contacts : [];
+
+        for (const msg of messages) {
+          await processIncomingMessage(admin, channel, msg, contacts, value);
+        }
+
+        const statuses = Array.isArray(value?.statuses) ? value.statuses : [];
+        for (const st of statuses) {
+          await processStatus(admin, channel, st);
+        }
+
+        await admin.from("channels").update({ last_sync_at: new Date().toISOString() }).eq("id", channel.id);
+      }
+    }
+  } catch (e) {
+    console.error("whatsapp-webhook background processing error", e);
+    await admin.from("webhook_events").insert({
+      event_type: "webhook_processing_error",
+      status: "error",
+      source: "app",
+      payload,
+      error_message: (e as Error).message,
+      processed_at: new Date().toISOString(),
+    });
+  }
+}
+
+async function recordAiInteraction(admin: any, interaction: Record<string, unknown>) {
+  const { error } = await admin.from("ai_interactions").insert(interaction);
+  if (error) console.error("ai_interactions insert failed", { code: error.code ?? "unknown" });
+  return !error;
+}
+
+async function markAiDeliveryFailed(admin: any, inboundMessageId: string, errorMessage: string) {
+  const { error } = await admin.from("ai_interactions")
+    .update({ status: "send_failed", error_message: errorMessage })
+    .eq("inbound_message_id", inboundMessageId);
+  if (error) console.error("ai_interactions delivery status update failed", { code: error.code ?? "unknown" });
+}
+
+async function markAiDeliveryCompleted(admin: any, inboundMessageId: string, outboundMessageId: string | null) {
+  const { error } = await admin.from("ai_interactions")
+    .update({ status: "completed", outbound_message_id: outboundMessageId, error_message: null })
+    .eq("inbound_message_id", inboundMessageId);
+  if (error) console.error("ai_interactions delivery status update failed", { code: error.code ?? "unknown" });
+}
+
+async function markAiPersistenceFailed(admin: any, inboundMessageId: string, errorMessage: string) {
+  const { error } = await admin.from("ai_interactions")
+    .update({ status: "persistence_failed", error_message: errorMessage })
+    .eq("inbound_message_id", inboundMessageId);
+  if (error) console.error("ai_interactions persistence status update failed", { code: error.code ?? "unknown" });
 }

@@ -14,8 +14,26 @@ export type AiProviderConfig = {
   chatCompletionsUrl: string;
 };
 
+export const AI_REQUEST_TIMEOUT_MS = 15_000;
+
 export function isAiAutoReplyEnabled(channel: { ai_enabled?: boolean | null; auto_reply_enabled?: boolean | null }): boolean {
   return channel.ai_enabled === true && channel.auto_reply_enabled === true;
+}
+
+export function parseRetryAfterMs(value: string | null, now = Date.now()): number | null {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1000);
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(0, date - now) : null;
+}
+
+function isAlibabaModelStudioHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === "dashscope.aliyuncs.com"
+    || host === "dashscope-intl.aliyuncs.com"
+    || host === "dashscope-us.aliyuncs.com"
+    || /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.maas\.aliyuncs\.com$/.test(host);
 }
 
 export function resolveAiProviderConfig(env: AiProviderEnvironment): AiProviderConfig {
@@ -36,13 +54,13 @@ export function resolveAiProviderConfig(env: AiProviderEnvironment): AiProviderC
     throw new Error("AI_BASE_URL inválida");
   }
 
-  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash) {
-    throw new Error("AI_BASE_URL deve ser uma URL HTTPS sem credenciais, query ou fragmento");
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.port || parsed.search || parsed.hash) {
+    throw new Error("AI_BASE_URL deve ser uma URL HTTPS sem credenciais, porta customizada, query ou fragmento");
   }
 
   const normalizedPath = parsed.pathname.replace(/\/+$/, "");
-  if (provider === "alibaba" && !normalizedPath.endsWith("/compatible-mode/v1")) {
-    throw new Error("AI_BASE_URL da Alibaba deve terminar em /compatible-mode/v1");
+  if (provider === "alibaba" && (!isAlibabaModelStudioHost(parsed.hostname) || normalizedPath !== "/compatible-mode/v1")) {
+    throw new Error("AI_BASE_URL da Alibaba deve usar um host oficial aliyuncs.com e terminar em /compatible-mode/v1");
   }
 
   parsed.pathname = `${normalizedPath}/chat/completions`;
