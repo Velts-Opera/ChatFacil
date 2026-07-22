@@ -174,12 +174,20 @@ function CanaisPage() {
     loadQrChannel();
   }, []);
 
-  // Blindagem: cliente final nunca abre o painel de credenciais, nem forçando o estado
-  if (selected === "whatsapp" && isSuperAdmin) {
-    return <WhatsAppPanel channel={whatsChannel} loading={loading} onBack={() => setSelected(null)} onChanged={loadChannel} />;
+  if (selected === "whatsapp" && whatsChannel) {
+    if (isSuperAdmin) {
+      return <WhatsAppPanel channel={whatsChannel} loading={loading} onBack={() => setSelected(null)} onChanged={loadChannel} />;
+    }
+    return <OfficialWhatsAppStatus channel={whatsChannel} loading={loading} onBack={() => setSelected(null)} onChanged={loadChannel} />;
   }
 
-  if (selected === "whatsapp-qr") {
+  // Blindagem: somente o super admin abre a tela que contém credenciais da Meta.
+  if (selected === "whatsapp" && isSuperAdmin) {
+    return <WhatsAppPanel channel={null} loading={loading} onBack={() => setSelected(null)} onChanged={loadChannel} />;
+  }
+
+  // O QR é um provedor alternativo. Nunca o ofereça quando a API oficial já existe.
+  if (selected === "whatsapp-qr" && !whatsChannel) {
     return <WhatsAppQrPanel channel={qrChannel} onBack={() => setSelected(null)} onChanged={loadQrChannel} />;
   }
 
@@ -188,32 +196,104 @@ function CanaisPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Canais</h1>
         <p className="text-sm text-muted-foreground">
-          {isSuperAdmin
-            ? "Visão do servidor-mãe: conecte via Cloud API oficial ou QR."
-            : "Conecte seu WhatsApp e comece a atender. Leva menos de 1 minuto."}
+          {whatsChannel
+            ? "Seu WhatsApp usa a API oficial da Meta. Não é necessário escanear QR Code."
+            : isSuperAdmin
+              ? "Configure a Cloud API oficial da Meta ou use o conector por QR como alternativa."
+              : "Conecte seu WhatsApp e comece a atender."}
         </p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <ChannelCard
-          icon={<MessageCircle className="h-5 w-5" />}
-          name="Meu WhatsApp"
-          description="Conecte escaneando um QR Code, como no WhatsApp Web."
-          status={(qrChannel?.status as ChannelStatus) ?? "disconnected"}
-          onClick={() => setSelected("whatsapp-qr")}
-        />
-        {isSuperAdmin && (
+        {whatsChannel ? (
+          <ChannelCard
+            icon={<ShieldCheck className="h-5 w-5" />}
+            name="WhatsApp oficial"
+            description={whatsChannel.phone_number ? `API da Meta · ${whatsChannel.phone_number}` : "Conectado pela API oficial da Meta."}
+            status={whatsChannel?.status ?? "disconnected"}
+            onClick={() => setSelected("whatsapp")}
+          />
+        ) : (
+          <ChannelCard
+            icon={<MessageCircle className="h-5 w-5" />}
+            name="Meu WhatsApp"
+            description="Conecte escaneando um QR Code, como no WhatsApp Web."
+            status={(qrChannel?.status as ChannelStatus) ?? "disconnected"}
+            onClick={() => setSelected("whatsapp-qr")}
+          />
+        )}
+        {isSuperAdmin && !whatsChannel && (
           <ChannelCard
             icon={<ShieldCheck className="h-5 w-5" />}
             name="WhatsApp Cloud API (admin)"
             description="Credenciais Meta, webhook e Embedded Signup."
-            status={whatsChannel?.status ?? "disconnected"}
+            status="disconnected"
             onClick={() => setSelected("whatsapp")}
           />
         )}
         <ChannelCard icon={<Instagram className="h-5 w-5" />} name="Instagram" description="Em breve." status="disconnected" disabled />
         <ChannelCard icon={<MessagesSquare className="h-5 w-5" />} name="Messenger" description="Em breve." status="disconnected" disabled />
       </div>
+    </div>
+  );
+}
+
+function OfficialWhatsAppStatus({ channel, loading, onBack, onChanged }: {
+  channel: Channel;
+  loading: boolean;
+  onBack: () => void;
+  onChanged: () => void | Promise<void>;
+}) {
+  return (
+    <div className="space-y-6 p-4 sm:p-6">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          <ArrowLeft className="mr-1 h-4 w-4" />Voltar
+        </Button>
+        <div className="flex-1">
+          <h1 className="text-2xl font-semibold tracking-tight">WhatsApp oficial</h1>
+          <p className="text-sm text-muted-foreground">Conexão direta pela API oficial da Meta.</p>
+        </div>
+        <StatusBadge status={channel.status} />
+      </div>
+
+      <section className="rounded-xl border border-green-200 bg-green-50 p-6 shadow-sm">
+        <div className="flex items-start gap-3">
+          <ShieldCheck className="mt-0.5 h-6 w-6 shrink-0 text-green-700" />
+          <div>
+            <h2 className="font-semibold text-green-950">
+              {channel.status === "connected" ? "Conectado pela Meta" : "Canal oficial configurado"}
+            </h2>
+            <p className="mt-1 text-sm text-green-800">
+              Este canal não usa WhatsApp Web. QR Code e aparelhos conectados não são necessários.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {channel.status === "error" && channel.last_error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <div className="flex items-center gap-2 font-medium"><TriangleAlert className="h-4 w-4" />Erro da API da Meta</div>
+          <p className="mt-1">{channel.last_error}</p>
+        </div>
+      )}
+
+      <section className="rounded-xl border bg-card p-6 shadow-sm">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Info label="Número" value={channel.phone_number ?? "—"} />
+          <Info label="Nome verificado" value={channel.verified_name ?? channel.name} />
+          <Info label="Qualidade" value={channel.quality_rating ?? "—"} />
+          <Info label="Conectado em" value={fmt(channel.connected_at)} />
+          <Info label="Última sincronização" value={fmt(channel.last_sync_at)} />
+          <Info label="Provedor" value="WhatsApp Cloud API" />
+        </div>
+        <div className="mt-5">
+          <Button variant="outline" onClick={onChanged} disabled={loading}>
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            Atualizar status
+          </Button>
+        </div>
+      </section>
     </div>
   );
 }
