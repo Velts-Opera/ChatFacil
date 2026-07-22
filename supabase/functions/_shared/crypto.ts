@@ -1,5 +1,3 @@
-import { requiredEnv } from "./http.ts";
-
 function bytesToBase64(bytes: Uint8Array) {
   let binary = "";
   for (const b of bytes) binary += String.fromCharCode(b);
@@ -14,8 +12,22 @@ function base64ToBytes(value: string) {
 }
 
 async function deriveKey() {
-  const secret = requiredEnv("APP_ENCRYPTION_KEY");
-  if (secret.length < 32) throw new Error("APP_ENCRYPTION_KEY deve ter pelo menos 32 caracteres.");
+  const configuredSecret = Deno.env.get("APP_ENCRYPTION_KEY")?.trim();
+  if (configuredSecret && configuredSecret.length < 32) {
+    throw new Error("APP_ENCRYPTION_KEY deve ter pelo menos 32 caracteres.");
+  }
+
+  // APP_ENCRYPTION_KEY remains the preferred override. Hosted Supabase Edge
+  // Functions always receive SUPABASE_SERVICE_ROLE_KEY, so use a namespaced
+  // derivation of that backend-only secret when no dedicated key was set.
+  // This keeps credentials encrypted without exposing key material to Vercel
+  // or to the browser.
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim();
+  const secret = configuredSecret || (serviceRoleKey ? `chatfacil:app-encryption:v1:${serviceRoleKey}` : null);
+  if (!secret) {
+    throw new Error("Missing APP_ENCRYPTION_KEY/SUPABASE_SERVICE_ROLE_KEY");
+  }
+
   const material = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
   return crypto.subtle.importKey("raw", material, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }

@@ -1,6 +1,6 @@
 import { adminClient, requireUser } from "../_shared/auth.ts";
 import { encryptSecret } from "../_shared/crypto.ts";
-import { corsHeaders, json, requiredEnv } from "../_shared/http.ts";
+import { corsHeaders, json } from "../_shared/http.ts";
 import { graphBase, maskToken } from "../_shared/whatsapp.ts";
 
 type Action = "create" | "status" | "complete";
@@ -231,7 +231,6 @@ Deno.serve(async (req) => {
     if (body.action === "create") {
       const context = await requireUser(req);
       const config = metaConfig();
-      requiredEnv("APP_ENCRYPTION_KEY");
       admin = context.admin;
 
       const token = randomToken();
