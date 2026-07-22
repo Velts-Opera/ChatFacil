@@ -1,4 +1,5 @@
 import { adminClient } from "../_shared/auth.ts";
+import { isAiAutoReplyEnabled, resolveAiProviderConfig, type AiProviderConfig } from "../_shared/ai-provider.ts";
 import { constantTimeEqual, json, sha256HmacHex, text } from "../_shared/http.ts";
 import {
   extractMessageText,
@@ -269,8 +270,11 @@ async function tryAutomationOrAiReply(
     return;
   }
 
-  if (!channel.auto_reply_enabled) {
-    await admin.from("conversations").update({ ai_handling: false, status: "pendente", handoff_reason: "IA desativada para resposta automática" }).eq("id", conversationId);
+  if (!isAiAutoReplyEnabled(channel)) {
+    const handoffReason = !channel.ai_enabled
+      ? "IA desativada neste canal"
+      : "IA desativada para resposta automática";
+    await admin.from("conversations").update({ ai_handling: false, status: "pendente", handoff_reason: handoffReason }).eq("id", conversationId);
     return;
   }
 
@@ -298,7 +302,31 @@ async function tryAutomationOrAiReply(
     return;
   }
 
-  const reply = await generateAiReply(admin, channel, conversationId, userMessage, apiKey, inboundMessageId, agentSettings);
+  let aiConfig: AiProviderConfig;
+  try {
+    aiConfig = resolveAiProviderConfig({
+      AI_PROVIDER: Deno.env.get("AI_PROVIDER") ?? undefined,
+      AI_BASE_URL: Deno.env.get("AI_BASE_URL") ?? undefined,
+      AI_MODEL: Deno.env.get("AI_MODEL") ?? undefined,
+      AI_API_KEY: apiKey,
+      OPENAI_MODEL: Deno.env.get("OPENAI_MODEL") ?? undefined,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Configuração de IA inválida";
+    await admin.from("ai_interactions").insert({
+      company_id: channel.company_id,
+      channel_id: channel.id,
+      conversation_id: conversationId,
+      inbound_message_id: inboundMessageId,
+      status: "error",
+      input: userMessage,
+      error_message: errorMessage,
+    });
+    await admin.from("conversations").update({ ai_handling: false, status: "pendente", handoff_reason: errorMessage }).eq("id", conversationId);
+    return;
+  }
+
+  const reply = await generateAiReply(admin, channel, conversationId, userMessage, aiConfig, inboundMessageId, agentSettings);
   if (!reply) {
     await admin.from("conversations").update({ ai_handling: false, status: "pendente", handoff_reason: "IA não respondeu com segurança" }).eq("id", conversationId);
     return;
@@ -307,7 +335,7 @@ async function tryAutomationOrAiReply(
   await sendBotReply(admin, channel, conversationId, contactId, waId, inboundMessageId, reply, "ai", rawValue);
 }
 
-async function generateAiReply(admin: any, channel: any, conversationId: string, userMessage: string, apiKey: string, inboundMessageId: string, agentSettings: any = null) {
+async function generateAiReply(admin: any, channel: any, conversationId: string, userMessage: string, aiConfig: AiProviderConfig, inboundMessageId: string, agentSettings: any = null) {
   const [{ data: company }, { data: quickReplies }, { data: knowledge }, { data: history }] = await Promise.all([
     admin.from("companies").select("name, segment, business_hours, services_description, communication_tone").eq("id", channel.company_id).maybeSingle(),
     admin.from("quick_replies").select("title, message, category").eq("company_id", channel.company_id).limit(20),
@@ -342,19 +370,33 @@ async function generateAiReply(admin: any, channel: any, conversationId: string,
     { role: "user", content: userMessage },
   ];
 
-  const provider = (Deno.env.get("AI_PROVIDER") ?? "openai").toLowerCase();
-  const model = Deno.env.get("AI_MODEL") ?? Deno.env.get("OPENAI_MODEL") ?? (provider === "alibaba" ? "qwen-plus" : "gpt-4o-mini");
-  const baseUrl = (Deno.env.get("AI_BASE_URL") ?? "https://api.openai.com/v1").replace(/\/+$/, "");
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
+  const { provider, model, apiKey, chatCompletionsUrl } = aiConfig;
+  let res: Response;
+  try {
+    res = await fetch(chatCompletionsUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        temperature: agentSettings?.temperature ?? 0.2,
+        max_tokens: agentSettings?.max_tokens ?? 320,
+        messages,
+      }),
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "erro de rede desconhecido";
+    await admin.from("ai_interactions").insert({
+      company_id: channel.company_id,
+      channel_id: channel.id,
+      conversation_id: conversationId,
+      inbound_message_id: inboundMessageId,
+      status: "error",
       model,
-      temperature: agentSettings?.temperature ?? 0.2,
-      max_tokens: agentSettings?.max_tokens ?? 320,
-      messages,
-    }),
-  });
+      input: userMessage,
+      error_message: `Falha de rede ao chamar ${provider}: ${detail}`,
+    });
+    return null;
+  }
 
   const out = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -400,7 +442,28 @@ async function sendBotReply(
   rawValue: any,
 ) {
   const secret = await getChannelSecret(admin, channel.id);
-  if (!secret?.access_token || !channel.phone_number_id) return;
+  if (!secret?.access_token || !channel.phone_number_id) {
+    const now = new Date().toISOString();
+    await admin.from("webhook_events").insert({
+      company_id: channel.company_id,
+      channel_id: channel.id,
+      event_type: `${source}_reply_not_sent`,
+      status: "error",
+      source: "app",
+      payload: {
+        has_access_token: Boolean(secret?.access_token),
+        has_phone_number_id: Boolean(channel.phone_number_id),
+      },
+      error_message: "Canal sem credenciais Meta completas para envio",
+      processed_at: now,
+    });
+    await admin.from("conversations").update({
+      ai_handling: false,
+      status: "pendente",
+      handoff_reason: "Canal sem credenciais Meta completas para envio",
+    }).eq("id", conversationId);
+    return;
+  }
 
   const meta = await sendWhatsAppText(secret.access_token, channel.phone_number_id, waId, reply);
   const now = new Date().toISOString();
