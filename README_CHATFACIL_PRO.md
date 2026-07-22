@@ -69,12 +69,12 @@ supabase db push
 
 ```bash
 supabase functions deploy whatsapp-webhook --no-verify-jwt
-supabase functions deploy whatsapp-test-connection
-supabase functions deploy whatsapp-send-message
-supabase functions deploy whatsapp-sync-templates
-supabase functions deploy whatsapp-send-template
-supabase functions deploy whatsapp-disconnect-channel
-supabase functions deploy whatsapp-health-check
+supabase functions deploy whatsapp-test-connection --no-verify-jwt
+supabase functions deploy whatsapp-send-message --no-verify-jwt
+supabase functions deploy whatsapp-sync-templates --no-verify-jwt
+supabase functions deploy whatsapp-send-template --no-verify-jwt
+supabase functions deploy whatsapp-disconnect-channel --no-verify-jwt
+supabase functions deploy whatsapp-health-check --no-verify-jwt
 supabase functions deploy whatsapp-embedded-signup --no-verify-jwt
 ```
 

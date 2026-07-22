@@ -445,6 +445,28 @@ function StatusBadge({ status }: { status: ChannelStatus | string }) {
   return <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", s.cls)}>{s.icon}{s.label}</span>;
 }
 
+async function edgeFunctionErrorMessage(error: unknown, fallback: string) {
+  if (error && typeof error === "object" && "context" in error) {
+    const context = (error as { context?: unknown }).context;
+    if (context instanceof Response) {
+      try {
+        const payload = await context.clone().json();
+        if (payload && typeof payload === "object" && "error" in payload) {
+          const message = (payload as { error?: unknown }).error;
+          if (typeof message === "string" && message.trim()) return message;
+        }
+      } catch {
+        // The SDK fallback below still gives a useful message for non-JSON responses.
+      }
+    }
+  }
+
+  if (error instanceof Error && error.message && !error.message.includes("non-2xx status code")) {
+    return error.message;
+  }
+  return fallback;
+}
+
 // Painel Cloud API: só o admin da plataforma (servidor-mãe) configura credenciais.
 // O cliente final nunca vê token/IDs da Meta — ele conecta pelo QR.
 function WhatsAppPanel({ channel, loading, onBack, onChanged }: {
@@ -515,7 +537,10 @@ function WhatsAppPanel({ channel, loading, onBack, onChanged }: {
           business_hours: businessHours,
         },
       });
-      if (error) throw error;
+      if (error) {
+        toast.error(await edgeFunctionErrorMessage(error, "Falha ao validar a conexão com a Meta."));
+        return;
+      }
       if (data?.ok) {
         toast.success("Conexão real validada com a Meta.");
         setAccessToken("");

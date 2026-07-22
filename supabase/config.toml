@@ -4,21 +4,21 @@ project_id = "ncosftsthrzznevzkvbi"
 verify_jwt = false
 
 [functions.whatsapp-test-connection]
-verify_jwt = true
+verify_jwt = false
 
 [functions.whatsapp-send-message]
-verify_jwt = true
+verify_jwt = false
 [functions.whatsapp-sync-templates]
-verify_jwt = true
+verify_jwt = false
 
 [functions.whatsapp-send-template]
-verify_jwt = true
+verify_jwt = false
 
 [functions.whatsapp-disconnect-channel]
-verify_jwt = true
+verify_jwt = false
 
 [functions.whatsapp-health-check]
-verify_jwt = true
+verify_jwt = false
 
 [functions.whatsapp-embedded-signup]
 verify_jwt = false
