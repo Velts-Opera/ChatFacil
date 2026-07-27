@@ -85,7 +85,7 @@ function managerUrl(channel: any) {
 async function loadChannel(admin: any, companyId: string, channelId?: string) {
   let query = admin
     .from("channels")
-    .select("id, company_id, provider, status, phone_number, phone_number_id, waba_id, business_portfolio_id, meta_business_agent_status, meta_business_agent_eligible, meta_business_agent_enabled, meta_business_agent_last_checked_at, meta_business_agent_last_error")
+    .select("id, company_id, provider, status, phone_number, phone_number_id, waba_id, business_portfolio_id, ai_enabled, auto_reply_enabled, meta_business_agent_status, meta_business_agent_eligible, meta_business_agent_enabled, meta_business_agent_last_checked_at, meta_business_agent_last_error, meta_business_agent_previous_ai_enabled, meta_business_agent_previous_auto_reply_enabled")
     .eq("company_id", companyId)
     .eq("type", "whatsapp")
     .eq("provider", "meta_cloud_api");
@@ -186,6 +186,8 @@ async function configureFromChatFacil(admin: any, channel: any, accessToken: str
   });
   if (!businessInfo.ok) throw new Error(errorMessage(businessInfo));
 
+  // Skills are created only while moving from onboarding to configured, avoiding
+  // duplicate skills if the user re-syncs the idempotent business/settings data.
   const instructions = [
     agent?.agent_name ? `Você se apresenta como ${agent.agent_name}.` : null,
     company?.communication_tone ? `Use tom ${company.communication_tone}.` : null,
@@ -195,7 +197,7 @@ async function configureFromChatFacil(admin: any, channel: any, accessToken: str
       : null,
   ].filter(Boolean).join("\n");
 
-  if (instructions) {
+  if (instructions && channel.meta_business_agent_status === "onboarding") {
     const skill = await metaAgentRequest(channel.phone_number_id, "agent_config/skills", accessToken, {
       method: "POST",
       body: JSON.stringify({
@@ -225,6 +227,38 @@ async function configureFromChatFacil(admin: any, channel: any, accessToken: str
   });
 
   return { business_info: businessInfo.body, settings: settings.body };
+}
+
+async function saveRolloutState(admin: any, channel: any, enabled: boolean) {
+  if (enabled) {
+    const previousAiEnabled = channel.meta_business_agent_enabled
+      ? channel.meta_business_agent_previous_ai_enabled
+      : Boolean(channel.ai_enabled);
+    const previousAutoReplyEnabled = channel.meta_business_agent_enabled
+      ? channel.meta_business_agent_previous_auto_reply_enabled
+      : Boolean(channel.auto_reply_enabled);
+
+    await saveAgentState(admin, channel, {
+      meta_business_agent_status: "enabled",
+      meta_business_agent_enabled: true,
+      meta_business_agent_previous_ai_enabled: previousAiEnabled,
+      meta_business_agent_previous_auto_reply_enabled: previousAutoReplyEnabled,
+      ai_enabled: false,
+      auto_reply_enabled: false,
+      meta_business_agent_last_error: null,
+    });
+    return;
+  }
+
+  await saveAgentState(admin, channel, {
+    meta_business_agent_status: "configured",
+    meta_business_agent_enabled: false,
+    ai_enabled: channel.meta_business_agent_previous_ai_enabled ?? Boolean(channel.ai_enabled),
+    auto_reply_enabled: channel.meta_business_agent_previous_auto_reply_enabled ?? Boolean(channel.auto_reply_enabled),
+    meta_business_agent_previous_ai_enabled: null,
+    meta_business_agent_previous_auto_reply_enabled: null,
+    meta_business_agent_last_error: null,
+  });
 }
 
 Deno.serve(async (req) => {
@@ -292,11 +326,7 @@ Deno.serve(async (req) => {
       });
       if (!result.ok) return json({ error: errorMessage(result), response: result.body }, 502);
 
-      await saveAgentState(context.admin, channel, {
-        meta_business_agent_status: body.enabled ? "enabled" : "configured",
-        meta_business_agent_enabled: body.enabled,
-        meta_business_agent_last_error: null,
-      });
+      await saveRolloutState(context.admin, channel, body.enabled);
       return json({ ok: true, enabled: body.enabled, audience, response: result.body });
     }
 
