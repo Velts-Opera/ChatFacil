@@ -7,7 +7,9 @@ ALTER TABLE public.channels
   ADD COLUMN IF NOT EXISTS meta_business_agent_eligible BOOLEAN,
   ADD COLUMN IF NOT EXISTS meta_business_agent_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS meta_business_agent_last_checked_at TIMESTAMPTZ,
-  ADD COLUMN IF NOT EXISTS meta_business_agent_last_error TEXT;
+  ADD COLUMN IF NOT EXISTS meta_business_agent_last_error TEXT,
+  ADD COLUMN IF NOT EXISTS meta_business_agent_previous_ai_enabled BOOLEAN,
+  ADD COLUMN IF NOT EXISTS meta_business_agent_previous_auto_reply_enabled BOOLEAN;
 
 DO $$
 BEGIN
@@ -60,3 +62,7 @@ COMMENT ON COLUMN public.channels.meta_business_agent_status IS
   'Lifecycle state of Meta Business Agent Platform for this official WhatsApp number.';
 COMMENT ON COLUMN public.channels.meta_business_agent_enabled IS
   'True only when the native Meta Business Agent rollout is enabled; ChatFacil must not auto-reply in parallel.';
+COMMENT ON COLUMN public.channels.meta_business_agent_previous_ai_enabled IS
+  'Previous ChatFacil AI switch, restored when native Meta Business Agent rollout is disabled.';
+COMMENT ON COLUMN public.channels.meta_business_agent_previous_auto_reply_enabled IS
+  'Previous ChatFacil auto-reply switch, restored when native Meta Business Agent rollout is disabled.';
