@@ -16,6 +16,7 @@ import {
   Bot,
   CalendarDays,
   Building2,
+  ShieldCheck,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ const nav = [
   { to: "/contatos", label: "Contatos", icon: Users },
   { to: "/agenda", label: "Agenda", icon: CalendarDays },
   { to: "/agente-ia", label: "Agente IA", icon: Bot },
+  { to: "/meta-business-agent", label: "Agente Meta", icon: ShieldCheck },
   { to: "/respostas-rapidas", label: "Respostas rápidas", icon: MessagesSquare },
   { to: "/canais", label: "Canais", icon: Radio },
   { to: "/configuracoes", label: "Configurações", icon: Settings },
