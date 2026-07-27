@@ -46,6 +46,15 @@ function buildBiaSystemPrompt(company: any, channel: any, knowledge: any[], quic
     "Responda em português do Brasil, em tom humano, caloroso, objetivo e comercial. Mensagens curtas, como uma atendente real digitando no WhatsApp.",
     "Use somente as informações cadastradas abaixo. Não invente preço, prazo, endereço, link ou política.",
     "Se não souber responder com segurança, diga: 'Vou chamar uma pessoa da equipe para confirmar isso com você, um instante!'",
+    "",
+    "PROTOCOLO DE AGENDAMENTO (siga à risca — nunca entre em loop):",
+    "- Antes de perguntar QUALQUER coisa, releia toda a conversa e identifique o que o cliente já informou: serviço, dia e horário. O nome e o telefone já vêm do WhatsApp — nunca peça o telefone e use o nome só para tratar a pessoa.",
+    "- Pergunte apenas o que ainda falta, UM item por vez, nesta ordem: serviço → dia → horário. Nunca pergunte de novo algo que o cliente já disse, mesmo que ele tenha respondido de outro jeito ou junto com outra informação.",
+    "- Se o cliente mandar algo que você não perguntou (ex.: o nome, o telefone, 'quero'), agradeça em uma frase e siga direto para o PRÓXIMO item que falta. Não repita a mesma pergunta.",
+    "- Use sempre datas no formato dd/mm/aaaa e horários hh:mm. Não misture formatos na mesma conversa.",
+    "- Quando já tiver serviço + dia + horário, mostre UMA única vez o resumo e pare para aguardar a resposta: 'Confirmando: <serviço> com <profissional>, dia <dd/mm/aaaa> às <hh:mm>, em nome de <nome>. Posso confirmar?'.",
+    "- Quando o cliente confirmar (sim, pode, isso, confirmo, ok, 👍 ou 'já passei'), responda UMA única vez com o fechamento e ENCERRE: 'Pronto, está agendado! ✅' seguido do resumo final. Não peça mais dados, não repita o resumo, não recomece o fluxo.",
+    "- Se o cliente quiser marcar rápido sem conversar, ou pedir para falar com uma pessoa, transfira para um atendente humano.",
     `Tom de comunicação da empresa: ${company?.communication_tone ?? "profissional"}.`,
     `Horário de atendimento: ${company?.business_hours ?? channel?.business_hours ?? "não cadastrado"}.`,
     `Serviços da empresa: ${company?.services_description ?? "não cadastrado"}.`,
@@ -85,7 +94,7 @@ export async function generateBiaReply(
     admin.from("companies").select("name, segment, business_hours, services_description, communication_tone, ai_assistant_name, ai_assistant_intro").eq("id", channel.company_id).maybeSingle(),
     admin.from("quick_replies").select("title, message, category").eq("company_id", channel.company_id).limit(20),
     admin.from("ai_knowledge_items").select("title, content").eq("company_id", channel.company_id).eq("is_active", true).limit(30),
-    admin.from("messages").select("direction, content, created_at").eq("conversation_id", conversationId).order("created_at", { ascending: false }).limit(10),
+    admin.from("messages").select("direction, content, created_at").eq("conversation_id", conversationId).order("created_at", { ascending: false }).limit(24),
   ]);
 
   const system = buildBiaSystemPrompt(company, channel, knowledge ?? [], quickReplies ?? [], agentSettings);

@@ -1,4 +1,4 @@
-const DEFAULT_MODEL = 'gemini-1.5-flash';
+const DEFAULT_MODEL = 'gemini-2.5-flash';
 
 function cleanPhone(value) {
   return String(value ?? '').replace(/\D/g, '');
@@ -152,15 +152,26 @@ export function createTenantAgent({
     return result;
   }
 
-  async function buildAgentPrompt(channel, conversationId, content, agent) {
+  // Protocolo determinístico de agendamento — impede o loop de re-perguntar
+  // dados que o cliente já informou e força um único fechamento na confirmação.
+  const BOOKING_PROTOCOL = [
+    '',
+    'PROTOCOLO DE AGENDAMENTO (siga à risca — nunca entre em loop):',
+    '- Antes de perguntar QUALQUER coisa, releia toda a conversa e identifique o que o cliente já informou: serviço, dia e horário. O nome e o telefone já vêm do WhatsApp — nunca peça o telefone e use o nome só para tratar a pessoa.',
+    '- Pergunte apenas o que ainda falta, UM item por vez, nesta ordem: serviço → dia → horário. Nunca pergunte de novo algo que o cliente já disse, mesmo que ele tenha respondido de outro jeito ou junto com outra informação.',
+    "- Se o cliente mandar algo que você não perguntou (ex.: o nome, o telefone, 'quero'), agradeça em uma frase e siga direto para o PRÓXIMO item que falta. Não repita a mesma pergunta.",
+    '- Use sempre datas no formato dd/mm/aaaa e horários hh:mm. Não misture formatos na mesma conversa.',
+    "- Quando já tiver serviço + dia + horário, mostre UMA única vez o resumo e pare para aguardar a resposta: 'Confirmando: <serviço> com <profissional>, dia <dd/mm/aaaa> às <hh:mm>, em nome de <nome>. Posso confirmar?'.",
+    "- Quando o cliente confirmar (sim, pode, isso, confirmo, ok, 👍 ou 'já passei'), responda UMA única vez com o fechamento e ENCERRE: 'Pronto, está agendado! ✅' seguido do resumo final. Não peça mais dados, não repita o resumo, não recomece o fluxo.",
+    '- Se o cliente quiser marcar rápido sem conversar, ou pedir para falar com uma pessoa, diga que vai transferir para um atendente.',
+  ].join('\n');
+
+  async function buildAgentSystemPrompt(channel, agent) {
     const knowledge = await request(
       `ai_knowledge_items?select=title,content&company_id=eq.${encode(channel.company_id)}&is_active=eq.true&or=(channel_id.is.null,channel_id.eq.${encode(channel.id)})&limit=50`,
     );
     const quickReplies = await request(
       `quick_replies?select=title,message&company_id=eq.${encode(channel.company_id)}&is_active=eq.true&limit=20`,
-    );
-    const history = await request(
-      `messages?select=direction,content&conversation_id=eq.${encode(conversationId)}&order=created_at.desc&limit=8`,
     );
     const knowledgeText = knowledge.length
       ? knowledge.map((item) => `## ${item.title}\n${item.content}`).join('\n\n')
@@ -168,17 +179,12 @@ export function createTenantAgent({
     const quickRepliesText = quickReplies.length
       ? `\n\nRespostas rápidas:\n${quickReplies.map((item) => `- ${item.title}: ${item.message}`).join('\n')}`
       : '';
-    const historyText = history
-      .reverse()
-      .slice(0, -1)
-      .map((item) => `${item.direction === 'inbound' ? 'Cliente' : 'Agente'}: ${item.content}`)
-      .join('\n');
     const tone = channel.communication_tone || 'profissional';
     const agentName = agent?.agent_name?.trim() || 'Assistente';
     const customPrompt = agent?.system_prompt?.trim()
-      ? `\n\nInstruções exclusivas deste agente:\n${agent.system_prompt.trim()}`
+      ? `\n\nInstruções exclusivas deste agente (siga com prioridade máxima):\n${agent.system_prompt.trim()}`
       : '';
-    return `Você é "${agentName}", agente de atendimento exclusivo da empresa "${channel.company_name || 'empresa'}".${customPrompt}\n\nTom: ${tone}.\nServiços: ${channel.services_description || 'não informado'}.\nHorário: ${channel.business_hours || 'não informado'}.\n\nBase de conhecimento:\n${knowledgeText}${quickRepliesText}\n\nHistórico:\n${historyText}\n\nRegras:\n- Responda em PT-BR, em no máximo 3 frases curtas.\n- Use apenas dados da empresa e da base.\n- Não invente preço, horário ou disponibilidade.\n- Se precisar de uma pessoa, diga que vai transferir para um atendente.\n\nMensagem atual do cliente:\n${content}`;
+    return `Você é "${agentName}", agente de atendimento exclusivo da empresa "${channel.company_name || 'empresa'}".${customPrompt}\n\nTom: ${tone}.\nServiços: ${channel.services_description || 'não informado'}.\nHorário: ${channel.business_hours || 'não informado'}.${BOOKING_PROTOCOL}\n\nBase de conhecimento:\n${knowledgeText}${quickRepliesText}\n\nRegras:\n- Responda em PT-BR, em no máximo 3 frases curtas.\n- Use apenas dados da empresa e da base.\n- Não invente preço, horário ou disponibilidade.\n- Se precisar de uma pessoa, diga que vai transferir para um atendente.`;
   }
 
   async function loadChannel(channelId) {
@@ -209,12 +215,28 @@ export function createTenantAgent({
 
   async function generateReply(channel, conversationId, content, agent) {
     if (!geminiApiKey) return null;
-    const prompt = await buildAgentPrompt(channel, conversationId, content, agent);
+    const system = await buildAgentSystemPrompt(channel, agent);
+    const history = await request(
+      `messages?select=direction,content&conversation_id=eq.${encode(conversationId)}&order=created_at.desc&limit=24`,
+    );
+    const turns = history
+      .reverse()
+      .filter((item) => item.content && !String(item.content).startsWith('['))
+      .map((item) => ({
+        role: item.direction === 'inbound' ? 'user' : 'model',
+        parts: [{ text: String(item.content) }],
+      }));
+    // Garante que a conversa termina com a mensagem atual do cliente.
+    const last = turns[turns.length - 1];
+    if (!last || last.role !== 'user' || last.parts[0].text !== content) {
+      turns.push({ role: 'user', parts: [{ text: content }] });
+    }
     const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(geminiApiKey)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        systemInstruction: { parts: [{ text: system }] },
+        contents: turns,
         generationConfig: {
           temperature: Number(agent?.temperature ?? 0.4),
           maxOutputTokens: Number(agent?.max_tokens ?? 400),

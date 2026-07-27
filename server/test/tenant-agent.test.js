@@ -16,7 +16,7 @@ test('tenant agent stays disabled until Supabase server access is configured', (
     aiEnabled: false,
     hasSupabaseKey: false,
     hasGeminiKey: false,
-    model: 'gemini-1.5-flash',
+    model: 'gemini-2.5-flash',
   });
 });
 
@@ -34,7 +34,7 @@ test('tenant agent reports direct mode readiness without exposing secrets', () =
     aiEnabled: true,
     hasSupabaseKey: true,
     hasGeminiKey: true,
-    model: 'gemini-1.5-flash',
+    model: 'gemini-2.5-flash',
   });
 });
 
