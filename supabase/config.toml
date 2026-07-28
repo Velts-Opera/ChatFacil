@@ -26,3 +26,15 @@ verify_jwt = false
 
 [functions.generate-agent-prompt]
 verify_jwt = true
+
+[functions.whatsapp-qr-event]
+verify_jwt = true
+
+[functions.whatsapp-qr-bridge]
+verify_jwt = true
+
+[functions.evolution-webhook]
+verify_jwt = true
+
+[functions.meta-app-audit]
+verify_jwt = true
