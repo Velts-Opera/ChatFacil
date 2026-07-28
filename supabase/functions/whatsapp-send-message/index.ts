@@ -16,10 +16,7 @@ Deno.serve(async (req) => {
   try {
     const { companyId, admin } = await requireUser(req);
     const body = (await req.json().catch(() => ({}))) as Body;
-
-    if (!body.channel_id || !body.message?.trim()) {
-      return json({ error: "channel_id e message são obrigatórios." }, 400);
-    }
+    if (!body.channel_id || !body.message?.trim()) return json({ error: "channel_id e message são obrigatórios." }, 400);
 
     const { data: channel, error: channelError } = await admin
       .from("channels")
@@ -30,25 +27,19 @@ Deno.serve(async (req) => {
     if (channelError) throw channelError;
     if (!channel) return json({ error: "Canal não encontrado." }, 404);
     if (channel.status !== "connected") return json({ error: "Canal não está conectado." }, 400);
+    if (channel.provider === "qr_code") return json({ error: "Canais QR enviam exclusivamente pela API Railway autenticada." }, 409);
 
-    const isQrChannel = channel.provider === "qr_code";
-    if (isQrChannel) {
-      return json({ error: "Canais QR enviam exclusivamente pela API Railway autenticada." }, 409);
-    }
     const secret = await getChannelSecret(admin, channel.id);
-    if (!secret?.access_token || !channel.phone_number_id) {
-      return json({ error: "Credenciais do canal não encontradas." }, 400);
-    }
+    if (!secret?.access_token || !channel.phone_number_id) return json({ error: "Credenciais do canal não encontradas." }, 400);
 
     let to = cleanPhone(body.to ?? "");
     let contactName: string | undefined;
-    let conversationIdFromBody = body.conversation_id;
-
-    if (conversationIdFromBody) {
+    const requestedConversationId = body.conversation_id;
+    if (requestedConversationId) {
       const { data: conversation, error } = await admin
         .from("conversations")
         .select("id, contact_id, contacts(phone, wa_id, name)")
-        .eq("id", conversationIdFromBody)
+        .eq("id", requestedConversationId)
         .eq("company_id", companyId)
         .maybeSingle();
       if (error) throw error;
@@ -57,10 +48,9 @@ Deno.serve(async (req) => {
       to = cleanPhone(contact?.wa_id || contact?.phone || to);
       contactName = contact?.name;
     }
-
     if (!to || to.length < 10) return json({ error: "Telefone destino inválido. Use DDI + DDD + número." }, 400);
 
-    const meta = await sendWhatsAppText(secret.access_token, channel.phone_number_id, to, body.message.trim());
+    const meta = await sendWhatsAppText(secret.access_token, channel.phone_number_id, to, body.message.trim(), AbortSignal.timeout(10_000));
     if (!meta.ok) {
       const errMsg = meta.json?.error?.message || `Meta API retornou HTTP ${meta.status}`;
       await admin.from("webhook_events").insert({
@@ -69,13 +59,12 @@ Deno.serve(async (req) => {
         event_type: "send_message_failed",
         status: "error",
         source: "app",
-        payload: { request: { to, message: body.message }, response: meta.json },
+        payload: { request: { to }, response: meta.json },
         error_message: errMsg,
         processed_at: new Date().toISOString(),
       });
-      return json({ ok: false, error: errMsg, meta: meta.json }, 200);
+      return json({ ok: false, error: errMsg }, 200);
     }
-    const metaJson: any = meta.json;
 
     const { contactId, conversationId } = await upsertContactAndConversation(admin, {
       companyId,
@@ -86,7 +75,7 @@ Deno.serve(async (req) => {
       lastMessage: body.message.trim(),
     });
 
-    const metaMessageId = metaJson?.messages?.[0]?.id ?? null;
+    const metaMessageId = meta.json?.messages?.[0]?.id ?? null;
     const { data: savedMessage, error: messageError } = await admin.from("messages").insert({
       company_id: companyId,
       channel_id: channel.id,
@@ -95,26 +84,44 @@ Deno.serve(async (req) => {
       direction: "outbound",
       message_type: "text",
       content: body.message.trim(),
-      sender_type: "agent",
+      sender_type: "human",
       meta_message_id: metaMessageId,
       status: "sent",
-      raw_payload: metaJson,
+      raw_payload: meta.json,
+      ai_generated: false,
     }).select("id").single();
     if (messageError) throw messageError;
 
-    const now = new Date().toISOString();
+    const { data: agentSettings } = await admin.from("ai_agent_settings").select("human_takeover_minutes").eq("company_id", companyId).maybeSingle();
+    const minutes = Math.max(5, Math.min(10080, Number(agentSettings?.human_takeover_minutes ?? 480)));
+    const now = new Date();
+    const pauseUntil = new Date(now.getTime() + minutes * 60_000).toISOString();
+    await admin.from("conversations").update({
+      ai_handling: false,
+      human_handling: true,
+      human_last_replied_at: now.toISOString(),
+      ai_paused_until: pauseUntil,
+      status: "pendente",
+      handoff_reason: "Atendimento assumido por uma pessoa",
+      last_message: body.message.trim(),
+      last_message_direction: "outbound",
+      unread_count: 0,
+      last_message_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    }).eq("id", conversationId).eq("company_id", companyId);
+
     await admin.from("webhook_events").insert({
       company_id: companyId,
       channel_id: channel.id,
-      event_type: "message_sent",
+      event_type: "human_reply_sent",
       status: "ok",
       source: "app",
-      payload: { to, meta_message_id: metaMessageId, response: metaJson },
-      processed_at: now,
+      payload: { to, meta_message_id: metaMessageId, conversation_id: conversationId, ai_paused_until: pauseUntil },
+      processed_at: now.toISOString(),
     });
-    await admin.from("channels").update({ last_sync_at: now }).eq("id", channel.id);
+    await admin.from("channels").update({ last_sync_at: now.toISOString() }).eq("id", channel.id);
 
-    return json({ ok: true, conversation_id: conversationId, message_id: savedMessage.id, meta_message_id: metaMessageId });
+    return json({ ok: true, conversation_id: conversationId, message_id: savedMessage.id, meta_message_id: metaMessageId, ai_paused_until: pauseUntil });
   } catch (e) {
     console.error("whatsapp-send-message error", e);
     const msg = (e as Error).message ?? "Erro inesperado";
