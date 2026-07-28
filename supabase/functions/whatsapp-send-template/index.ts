@@ -12,10 +12,7 @@ interface Body {
 
 function buildComponents(params?: string[]) {
   if (!params?.length) return undefined;
-  return [{
-    type: "body",
-    parameters: params.map((text) => ({ type: "text", text })),
-  }];
+  return [{ type: "body", parameters: params.map((text) => ({ type: "text", text })) }];
 }
 
 Deno.serve(async (req) => {
@@ -30,13 +27,14 @@ Deno.serve(async (req) => {
 
     const { data: channel, error: channelError } = await admin
       .from("channels")
-      .select("id, company_id, status, phone_number_id")
+      .select("id, company_id, status, phone_number_id, provider")
       .eq("id", body.channel_id)
       .eq("company_id", companyId)
       .maybeSingle();
     if (channelError) throw channelError;
     if (!channel) return json({ error: "Canal não encontrado." }, 404);
     if (channel.status !== "connected") return json({ error: "Canal não está conectado." }, 400);
+    if (channel.provider !== "meta_cloud_api") return json({ error: "Templates são enviados somente por canais oficiais da Meta Cloud API." }, 409);
 
     const secret = await getChannelSecret(admin, channel.id);
     if (!secret?.access_token || !channel.phone_number_id) return json({ error: "Credenciais do canal não encontradas." }, 400);
@@ -47,11 +45,7 @@ Deno.serve(async (req) => {
       recipient_type: "individual",
       to,
       type: "template",
-      template: {
-        name: body.template_name,
-        language: { code: language },
-        components: buildComponents(body.body_parameters),
-      },
+      template: { name: body.template_name, language: { code: language }, components: buildComponents(body.body_parameters) },
     };
 
     const res = await fetch(`${graphBase()}/${encodeURIComponent(channel.phone_number_id)}/messages`, {
@@ -63,15 +57,26 @@ Deno.serve(async (req) => {
     if (!res.ok) {
       const errMsg = meta?.error?.message || `Meta HTTP ${res.status}`;
       await admin.from("webhook_events").insert({
-        company_id: companyId, channel_id: channel.id, event_type: "send_template_failed", status: "error", source: "app",
-        payload: { request: payload, response: meta }, error_message: errMsg, processed_at: new Date().toISOString(),
+        company_id: companyId,
+        channel_id: channel.id,
+        event_type: "send_template_failed",
+        status: "error",
+        source: "app",
+        payload: { request: { to, template_name: body.template_name, language }, response: meta },
+        error_message: errMsg,
+        processed_at: new Date().toISOString(),
       });
       return json({ ok: false, error: errMsg, meta }, 200);
     }
 
+    const content = `[template] ${body.template_name}`;
     const { contactId, conversationId } = await upsertContactAndConversation(admin, {
-      companyId, channelId: channel.id, waId: to, name: to, inbound: false,
-      lastMessage: `[template] ${body.template_name}`,
+      companyId,
+      channelId: channel.id,
+      waId: to,
+      name: to,
+      inbound: false,
+      lastMessage: content,
     });
     const metaMessageId = meta?.messages?.[0]?.id ?? null;
     const { data: savedMessage, error: messageError } = await admin.from("messages").insert({
@@ -81,26 +86,52 @@ Deno.serve(async (req) => {
       contact_id: contactId,
       direction: "outbound",
       message_type: "template",
-      content: `[template] ${body.template_name}`,
-      sender_type: "agent",
+      content,
+      sender_type: "human",
       meta_message_id: metaMessageId,
       status: "sent",
       raw_payload: meta,
+      ai_generated: false,
     }).select("id").single();
     if (messageError) throw messageError;
 
+    const { data: settings } = await admin.from("ai_agent_settings").select("human_takeover_minutes").eq("company_id", companyId).maybeSingle();
+    const minutes = Math.max(5, Math.min(10080, Number(settings?.human_takeover_minutes ?? 480)));
+    const now = new Date();
+    const pauseUntil = new Date(now.getTime() + minutes * 60_000).toISOString();
+    await admin.from("conversations").update({
+      ai_handling: false,
+      human_handling: true,
+      human_last_replied_at: now.toISOString(),
+      ai_paused_until: pauseUntil,
+      status: "pendente",
+      handoff_reason: "Atendimento assumido por uma pessoa",
+      unread_count: 0,
+      updated_at: now.toISOString(),
+    }).eq("id", conversationId).eq("company_id", companyId);
+
     await admin.from("audit_logs").insert({
-      company_id: companyId, user_id: user.id, action: "whatsapp_template_sent",
-      resource_type: "message", resource_id: savedMessage.id, metadata: { to, template_name: body.template_name, language },
+      company_id: companyId,
+      user_id: user.id,
+      action: "whatsapp_template_sent",
+      resource_type: "message",
+      resource_id: savedMessage.id,
+      metadata: { to, template_name: body.template_name, language },
     });
     await admin.from("webhook_events").insert({
-      company_id: companyId, channel_id: channel.id, event_type: "template_sent", status: "ok", source: "app",
-      payload: { to, template_name: body.template_name, meta_message_id: metaMessageId, response: meta }, processed_at: new Date().toISOString(),
+      company_id: companyId,
+      channel_id: channel.id,
+      event_type: "template_sent",
+      status: "ok",
+      source: "app",
+      payload: { to, template_name: body.template_name, meta_message_id: metaMessageId },
+      processed_at: now.toISOString(),
     });
 
-    return json({ ok: true, conversation_id: conversationId, message_id: savedMessage.id, meta_message_id: metaMessageId });
+    return json({ ok: true, conversation_id: conversationId, message_id: savedMessage.id, meta_message_id: metaMessageId, ai_paused_until: pauseUntil });
   } catch (e) {
+    const msg = (e as Error).message ?? "Erro inesperado";
     console.error("whatsapp-send-template error", e);
-    return json({ error: (e as Error).message ?? "Erro inesperado" }, 500);
+    return json({ error: msg }, msg === "Unauthorized" || msg.includes("Authorization") || msg.includes("Company access disabled") ? 401 : 500);
   }
 });
