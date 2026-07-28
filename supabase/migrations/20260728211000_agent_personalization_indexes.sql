@@ -1,0 +1,12 @@
+CREATE INDEX IF NOT EXISTS idx_ai_interactions_channel_id ON public.ai_interactions(channel_id);
+CREATE INDEX IF NOT EXISTS idx_ai_interactions_conversation_id ON public.ai_interactions(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_ai_interactions_inbound_message_id ON public.ai_interactions(inbound_message_id);
+CREATE INDEX IF NOT EXISTS idx_ai_interactions_outbound_message_id ON public.ai_interactions(outbound_message_id);
+CREATE INDEX IF NOT EXISTS idx_ai_knowledge_items_channel_id ON public.ai_knowledge_items(channel_id);
+CREATE INDEX IF NOT EXISTS idx_contacts_channel_id ON public.contacts(channel_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_contact_id ON public.conversations(contact_id);
+CREATE INDEX IF NOT EXISTS idx_messages_channel_id ON public.messages(channel_id);
+CREATE INDEX IF NOT EXISTS idx_messages_contact_id ON public.messages(contact_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_company_id ON public.profiles(company_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_onboarding_sessions_channel_id ON public.whatsapp_onboarding_sessions(channel_id);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_onboarding_sessions_created_by ON public.whatsapp_onboarding_sessions(created_by);
