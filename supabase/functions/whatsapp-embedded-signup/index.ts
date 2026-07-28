@@ -4,6 +4,7 @@ import { corsHeaders, json, requiredEnv } from "../_shared/http.ts";
 import { graphBase, maskToken } from "../_shared/whatsapp.ts";
 
 type Action = "create" | "status" | "complete";
+type ConnectionMode = "cloud_api" | "coexistence";
 
 interface RequestBody {
   action?: Action;
@@ -11,6 +12,7 @@ interface RequestBody {
   code?: string;
   waba_id?: string;
   phone_number_id?: string;
+  connection_mode?: ConnectionMode;
 }
 
 interface MetaConfig {
@@ -42,30 +44,20 @@ function randomToken() {
 
 async function hashToken(token: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 async function loadSession(admin: any, token: string) {
   if (!token || token.length < 32) return null;
   const tokenHash = await hashToken(token);
-  const { data, error } = await admin
-    .from("whatsapp_onboarding_sessions")
-    .select("*")
-    .eq("token_hash", tokenHash)
-    .maybeSingle();
+  const { data, error } = await admin.from("whatsapp_onboarding_sessions").select("*").eq("token_hash", tokenHash).maybeSingle();
   if (error) throw error;
   if (!data) return null;
 
   if (["pending", "authorizing"].includes(data.status) && new Date(data.expires_at).getTime() <= Date.now()) {
-    await admin
-      .from("whatsapp_onboarding_sessions")
-      .update({ status: "expired", last_error: "Link de onboarding expirado" })
-      .eq("id", data.id);
+    await admin.from("whatsapp_onboarding_sessions").update({ status: "expired", last_error: "Link de onboarding expirado" }).eq("id", data.id);
     return { ...data, status: "expired", last_error: "Link de onboarding expirado" };
   }
-
   return data;
 }
 
@@ -79,12 +71,12 @@ async function metaJson(url: string, init: RequestInit = {}) {
   return body;
 }
 
+async function metaJsonOptional(url: string, init: RequestInit = {}) {
+  try { return await metaJson(url, init); } catch { return null; }
+}
+
 async function exchangeCode(config: MetaConfig, code: string) {
-  const query = new URLSearchParams({
-    client_id: config.appId,
-    client_secret: config.appSecret,
-    code,
-  });
+  const query = new URLSearchParams({ client_id: config.appId, client_secret: config.appSecret, code });
   const result = await metaJson(`${graphBase()}/oauth/access_token?${query.toString()}`);
   if (!result?.access_token) throw new Error("A Meta não retornou o token da empresa");
   return result.access_token as string;
@@ -94,9 +86,8 @@ async function completeOnboarding(admin: any, session: any, body: RequestBody, c
   const code = body.code?.trim();
   const wabaId = body.waba_id?.trim();
   const phoneNumberId = body.phone_number_id?.trim();
-  if (!code || !wabaId || !phoneNumberId) {
-    throw new Error("Código, WABA ID e Phone Number ID são obrigatórios");
-  }
+  const connectionMode: ConnectionMode = session.connection_mode === "coexistence" ? "coexistence" : "cloud_api";
+  if (!code || !wabaId || !phoneNumberId) throw new Error("Código, WABA ID e Phone Number ID são obrigatórios");
 
   const { data: locked, error: lockError } = await admin
     .from("whatsapp_onboarding_sessions")
@@ -109,15 +100,25 @@ async function completeOnboarding(admin: any, session: any, body: RequestBody, c
   if (!locked) throw new OnboardingConflictError("Este onboarding já está sendo processado ou foi concluído");
 
   const accessToken = await exchangeCode(config, code);
+  const authHeaders = { Authorization: `Bearer ${accessToken}` };
   const phone = await metaJson(
     `${graphBase()}/${encodeURIComponent(phoneNumberId)}?fields=id,display_phone_number,verified_name,quality_rating`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
+    { headers: authHeaders },
   );
 
   await metaJson(`${graphBase()}/${encodeURIComponent(wabaId)}/subscribed_apps`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: authHeaders,
   });
+
+  let coexistenceActive = false;
+  if (connectionMode === "coexistence") {
+    const phoneState = await metaJsonOptional(
+      `${graphBase()}/${encodeURIComponent(phoneNumberId)}?fields=id,is_on_biz_app,platform_type`,
+      { headers: authHeaders },
+    );
+    coexistenceActive = phoneState?.is_on_biz_app === true;
+  }
 
   const { data: existing, error: existingError } = await admin
     .from("channels")
@@ -125,9 +126,7 @@ async function completeOnboarding(admin: any, session: any, body: RequestBody, c
     .eq("phone_number_id", phoneNumberId)
     .maybeSingle();
   if (existingError) throw existingError;
-  if (existing && existing.company_id !== session.company_id) {
-    throw new Error("Este número já está vinculado a outra empresa");
-  }
+  if (existing && existing.company_id !== session.company_id) throw new Error("Este número já está vinculado a outra empresa");
 
   const now = new Date().toISOString();
   const webhookUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/whatsapp-webhook`;
@@ -135,6 +134,7 @@ async function completeOnboarding(admin: any, session: any, body: RequestBody, c
     company_id: session.company_id,
     type: "whatsapp",
     provider: "meta_cloud_api",
+    app_id: config.appId,
     name: phone.verified_name || "WhatsApp oficial",
     status: "connecting",
     phone_number: phone.display_phone_number ?? null,
@@ -151,22 +151,17 @@ async function completeOnboarding(admin: any, session: any, body: RequestBody, c
     connected_at: existing?.connected_at ?? now,
     last_sync_at: now,
     created_by: session.created_by,
+    connection_mode: connectionMode,
+    coexistence_active: coexistenceActive,
+    coexistence_last_sync_at: connectionMode === "coexistence" ? now : null,
   };
 
   let channelId = existing?.id as string | undefined;
   if (channelId) {
-    const { error } = await admin
-      .from("channels")
-      .update(channelPayload)
-      .eq("id", channelId)
-      .eq("company_id", session.company_id);
+    const { error } = await admin.from("channels").update(channelPayload).eq("id", channelId).eq("company_id", session.company_id);
     if (error) throw error;
   } else {
-    const { data, error } = await admin
-      .from("channels")
-      .insert(channelPayload)
-      .select("id")
-      .single();
+    const { data, error } = await admin.from("channels").insert(channelPayload).select("id").single();
     if (error) throw error;
     channelId = data.id;
   }
@@ -183,24 +178,17 @@ async function completeOnboarding(admin: any, session: any, body: RequestBody, c
   }, { onConflict: "channel_id" });
   if (secretError) throw secretError;
 
-  const { error: connectedError } = await admin
-    .from("channels")
-    .update({ status: "connected", last_error: null, last_error_code: null })
-    .eq("id", channelId)
-    .eq("company_id", session.company_id);
+  const { error: connectedError } = await admin.from("channels").update({ status: "connected", last_error: null, last_error_code: null }).eq("id", channelId).eq("company_id", session.company_id);
   if (connectedError) throw connectedError;
 
-  const { error: sessionError } = await admin
-    .from("whatsapp_onboarding_sessions")
-    .update({
-      status: "completed",
-      channel_id: channelId,
-      waba_id: wabaId,
-      phone_number_id: phoneNumberId,
-      completed_at: now,
-      last_error: null,
-    })
-    .eq("id", session.id);
+  const { error: sessionError } = await admin.from("whatsapp_onboarding_sessions").update({
+    status: "completed",
+    channel_id: channelId,
+    waba_id: wabaId,
+    phone_number_id: phoneNumberId,
+    completed_at: now,
+    last_error: null,
+  }).eq("id", session.id);
   if (sessionError) throw sessionError;
 
   await admin.from("audit_logs").insert({
@@ -209,13 +197,15 @@ async function completeOnboarding(admin: any, session: any, body: RequestBody, c
     action: existing ? "whatsapp_embedded_signup_reconnected" : "whatsapp_embedded_signup_connected",
     resource_type: "channel",
     resource_id: channelId,
-    metadata: { waba_id: wabaId, phone_number_id: phoneNumberId },
+    metadata: { waba_id: wabaId, phone_number_id: phoneNumberId, connection_mode: connectionMode, coexistence_active: coexistenceActive },
   });
 
   return {
     channel_id: channelId,
     phone_number: phone.display_phone_number ?? null,
     verified_name: phone.verified_name ?? null,
+    connection_mode: connectionMode,
+    coexistence_active: coexistenceActive,
   };
 }
 
@@ -232,31 +222,25 @@ Deno.serve(async (req) => {
       const context = await requireUser(req);
       const config = metaConfig();
       admin = context.admin;
-
+      const connectionMode: ConnectionMode = body.connection_mode === "coexistence" ? "coexistence" : "cloud_api";
       const token = randomToken();
       const expiresAt = new Date(Date.now() + 20 * 60 * 1000).toISOString();
-      const { data, error } = await admin
-        .from("whatsapp_onboarding_sessions")
-        .insert({
-          company_id: context.companyId,
-          created_by: context.user.id,
-          token_hash: await hashToken(token),
-          status: "pending",
-          expires_at: expiresAt,
-        })
-        .select("id")
-        .single();
+      const { data, error } = await admin.from("whatsapp_onboarding_sessions").insert({
+        company_id: context.companyId,
+        created_by: context.user.id,
+        token_hash: await hashToken(token),
+        status: "pending",
+        expires_at: expiresAt,
+        connection_mode: connectionMode,
+      }).select("id").single();
       if (error) throw error;
 
       return json({
         ok: true,
         onboarding_token: token,
         expires_at: expiresAt,
-        meta: {
-          app_id: config.appId,
-          configuration_id: config.configurationId,
-          graph_version: config.graphVersion,
-        },
+        connection_mode: connectionMode,
+        meta: { app_id: config.appId, configuration_id: config.configurationId, graph_version: config.graphVersion },
       });
     }
 
@@ -271,11 +255,8 @@ Deno.serve(async (req) => {
         expires_at: session.expires_at,
         phone_number_id: session.status === "completed" ? session.phone_number_id : null,
         last_error: session.last_error,
-        meta: {
-          app_id: config.appId,
-          configuration_id: config.configurationId,
-          graph_version: config.graphVersion,
-        },
+        connection_mode: session.connection_mode ?? "cloud_api",
+        meta: { app_id: config.appId, configuration_id: config.configurationId, graph_version: config.graphVersion },
       });
     }
 
@@ -284,9 +265,8 @@ Deno.serve(async (req) => {
       const session = await loadSession(admin, body.token ?? "");
       if (!session) return json({ error: "Onboarding não encontrado" }, 404);
       sessionId = session.id;
-      if (session.status === "completed") return json({ ok: true, status: "completed", channel_id: session.channel_id });
+      if (session.status === "completed") return json({ ok: true, status: "completed", channel_id: session.channel_id, connection_mode: session.connection_mode });
       if (session.status === "expired") return json({ error: "Link de onboarding expirado" }, 410);
-
       const result = await completeOnboarding(admin, session, body, metaConfig());
       return json({ ok: true, status: "completed", ...result });
     }
@@ -296,17 +276,9 @@ Deno.serve(async (req) => {
     const message = error instanceof Error ? error.message : String(error);
     console.error("whatsapp-embedded-signup error", error);
     if (admin && sessionId && !(error instanceof OnboardingConflictError)) {
-      await admin
-        .from("whatsapp_onboarding_sessions")
-        .update({ status: "error", last_error: message.slice(0, 500) })
-        .eq("id", sessionId)
-        .neq("status", "completed");
+      await admin.from("whatsapp_onboarding_sessions").update({ status: "error", last_error: message.slice(0, 500) }).eq("id", sessionId).neq("status", "completed");
     }
-    const status = error instanceof OnboardingConflictError
-      ? 409
-      : message === "Unauthorized" || message.includes("Authorization")
-        ? 401
-        : 500;
+    const status = error instanceof OnboardingConflictError ? 409 : message === "Unauthorized" || message.includes("Authorization") ? 401 : 500;
     return json({ error: message }, status);
   }
 });
