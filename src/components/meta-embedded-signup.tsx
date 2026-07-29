@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
-import { CheckCircle2, Copy, ExternalLink, Loader2, QrCode, ShieldCheck, TriangleAlert } from "lucide-react";
+import { CheckCircle2, Copy, ExternalLink, Loader2, QrCode, ShieldCheck, TriangleAlert, Camera, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -148,7 +148,8 @@ export function MetaEmbeddedSignup({ token, onComplete }: {
         try { payload = JSON.parse(payload); } catch { return; }
       }
       if (payload?.type !== "WA_EMBEDDED_SIGNUP") return;
-      if (payload.event === "FINISH") {
+      const finished = payload.event === "FINISH" || payload.event === "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING";
+      if (finished) {
         const wabaId = payload.data?.waba_id;
         const phoneNumberId = payload.data?.phone_number_id;
         if (wabaId && phoneNumberId) setSessionInfo({ wabaId, phoneNumberId });
@@ -302,25 +303,32 @@ export function MetaOnboardingLink({ onComplete }: {
       <div className="flex items-start gap-3">
         <div className="rounded-lg bg-primary/10 p-2 text-primary"><QrCode className="h-5 w-5" /></div>
         <div className="flex-1">
-          <h2 className="font-medium">Onboarding oficial por QR Code</h2>
-          <p className="mt-1 text-sm text-muted-foreground">O QR abre uma página segura; a autorização e a conexão acontecem no Embedded Signup da Meta.</p>
+          <h2 className="font-medium">Conectar WhatsApp por QR</h2>
+          <p className="mt-1 text-sm text-muted-foreground">O QR abre a página segura do ChatFacil e inicia a autorização oficial da Meta.</p>
         </div>
       </div>
 
       {!onboardingUrl ? (
         <Button className="mt-4" onClick={createLink} disabled={creating}>
           {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <QrCode className="mr-2 h-4 w-4" />}
-          Gerar QR de onboarding
+          Gerar QR para conectar
         </Button>
       ) : (
         <div className="mt-5 grid gap-5 md:grid-cols-[280px_1fr] md:items-center">
-          {qrDataUrl && <img src={qrDataUrl} alt="QR Code do onboarding oficial da Meta" className="h-[280px] w-[280px] rounded-lg border bg-white" />}
+          {qrDataUrl && <img src={qrDataUrl} alt="QR Code para abrir o onboarding oficial da Meta" className="h-[280px] w-[280px] rounded-lg border bg-white" />}
           <div className="space-y-3">
-            <p className="text-sm">Escaneie com o celular do responsável pela conta Meta. O link é temporário e de uso único.</p>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+              <div className="flex items-center gap-2 font-semibold"><Camera className="h-4 w-4" />Leia com a câmera normal do celular</div>
+              <p className="mt-1">Não use WhatsApp → Aparelhos conectados. Aquele leitor aceita somente QR de WhatsApp Web/Desktop e mostrará “QR code inválido”.</p>
+            </div>
+            <div className="rounded-lg bg-muted p-3 text-sm">
+              <div className="flex items-center gap-2 font-medium"><Smartphone className="h-4 w-4" />No celular</div>
+              <div className="mt-1 text-xs text-muted-foreground">Abra a câmera, aponte para o QR e toque no link que aparecer. Depois conclua a autorização da Meta.</div>
+            </div>
             <div className="break-all rounded-lg bg-muted p-3 font-mono text-xs">{onboardingUrl}</div>
             <div className="flex flex-wrap gap-2">
+              <Button variant="default" asChild><a href={onboardingUrl}><ExternalLink className="mr-2 h-4 w-4" />Abrir neste aparelho</a></Button>
               <Button variant="outline" onClick={copyLink}><Copy className="mr-2 h-4 w-4" />Copiar link</Button>
-              <Button variant="outline" asChild><a href={onboardingUrl} target="_blank" rel="noreferrer"><ExternalLink className="mr-2 h-4 w-4" />Abrir onboarding</a></Button>
               <Button variant="ghost" onClick={createLink} disabled={creating}>Gerar outro</Button>
             </div>
           </div>
