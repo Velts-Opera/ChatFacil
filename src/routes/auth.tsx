@@ -15,83 +15,71 @@ function normalizeEmail(email: string) {
 
 function getAuthRedirectTo(path = "") {
   if (typeof window === "undefined") return undefined;
-
   const { origin } = window.location;
   const isLocalOrigin = origin.startsWith("http://127.0.0.1") || origin.startsWith("http://localhost");
-
   return isLocalOrigin ? undefined : `${origin}${path}`;
 }
 
 function getSupabaseAuthMessage(message: string) {
   const lowerMessage = message.toLowerCase();
-
-  if (lowerMessage.includes("invalid login credentials")) {
-    return "E-mail ou senha inválidos.";
-  }
-
-  if (lowerMessage.includes("email not confirmed")) {
-    return "Confirme seu e-mail antes de entrar.";
-  }
-
-  if (lowerMessage.includes("already registered") || lowerMessage.includes("already been registered")) {
-    return "Este e-mail já está cadastrado. Entre com sua senha ou recupere o acesso.";
-  }
-
-  if (lowerMessage.includes("redirect") || lowerMessage.includes("not allowed")) {
-    return "URL de autenticação não autorizada no Supabase. Cadastre o domínio atual nas URLs permitidas.";
-  }
-
+  if (lowerMessage.includes("invalid login credentials")) return "E-mail ou senha inválidos.";
+  if (lowerMessage.includes("email not confirmed")) return "Confirme seu e-mail antes de entrar.";
+  if (lowerMessage.includes("already registered") || lowerMessage.includes("already been registered")) return "Este e-mail já está cadastrado. Entre com sua senha ou recupere o acesso.";
+  if (lowerMessage.includes("weak password")) return "Escolha uma senha mais forte.";
+  if (lowerMessage.includes("redirect") || lowerMessage.includes("not allowed")) return "URL de autenticação não autorizada no Supabase. Cadastre o domínio atual nas URLs permitidas.";
   return message || "Não foi possível autenticar agora.";
+}
+
+export function validateNewPassword(password: string) {
+  const missing: string[] = [];
+  if (password.length < 12) missing.push("12 caracteres");
+  if (!/[a-z]/.test(password)) missing.push("uma letra minúscula");
+  if (!/[A-Z]/.test(password)) missing.push("uma letra maiúscula");
+  if (!/\d/.test(password)) missing.push("um número");
+  if (!/[^A-Za-z0-9]/.test(password)) missing.push("um símbolo");
+  return missing;
 }
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
-      { title: "Entrar ou cadastrar — Comunica AI" },
-      { name: "description", content: "Acesse ou crie sua conta na Comunica AI." },
+      { title: "Entrar ou cadastrar — ChatFacil" },
+      { name: "description", content: "Acesse ou crie sua conta no ChatFacil." },
     ],
   }),
   component: AuthPage,
 });
 
+function Brand() {
+  return (
+    <Link to="/" className="flex items-center gap-2">
+      <div className="grid h-8 w-8 place-items-center rounded-lg bg-success text-success-foreground"><MessageSquareText className="h-4 w-4" /></div>
+      <span className="font-display text-lg font-extrabold">ChatFacil</span>
+    </Link>
+  );
+}
+
 function AuthPage() {
   const navigate = useNavigate();
-
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate({ to: "/dashboard", replace: true });
-    });
+    supabase.auth.getSession().then(({ data }) => { if (data.session) navigate({ to: "/dashboard", replace: true }); });
   }, [navigate]);
 
   return (
     <div className="min-h-screen bg-surface">
       <div className="mx-auto grid min-h-screen max-w-6xl grid-cols-1 lg:grid-cols-2">
         <div className="hidden flex-col justify-between bg-primary p-10 text-primary-foreground lg:flex">
-          <Link to="/" className="flex items-center gap-2">
-            <div className="grid h-8 w-8 place-items-center rounded-lg bg-success text-success-foreground">
-              <MessageSquareText className="h-4 w-4" />
-            </div>
-            <span className="font-display text-lg font-extrabold">Comunica AI</span>
-          </Link>
+          <Brand />
           <div>
-            <h1 className="font-display text-4xl font-extrabold leading-tight">
-              Transforme seu WhatsApp em uma máquina de atendimento e vendas.
-            </h1>
-            <p className="mt-4 text-primary-foreground/80">
-              Inbox multiatendente, CRM, IA treinada com seus dados e automações sem código — tudo em um só lugar.
-            </p>
+            <h1 className="font-display text-4xl font-extrabold leading-tight">Transforme seu WhatsApp em uma máquina de atendimento e vendas.</h1>
+            <p className="mt-4 text-primary-foreground/80">Inbox multiatendente, CRM, agente treinado com seus dados e automações em um só lugar.</p>
           </div>
-          <p className="text-xs text-primary-foreground/60">© {new Date().getFullYear()} Comunica AI</p>
+          <p className="text-xs text-primary-foreground/60">© {new Date().getFullYear()} ChatFacil</p>
         </div>
 
         <div className="flex items-center justify-center p-6">
           <div className="w-full max-w-md">
-            <Link to="/" className="mb-6 flex items-center gap-2 lg:hidden">
-              <div className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-primary-foreground">
-                <MessageSquareText className="h-4 w-4" />
-              </div>
-              <span className="font-display text-lg font-extrabold">Comunica AI</span>
-            </Link>
+            <div className="mb-6 lg:hidden"><Brand /></div>
             <Tabs defaultValue="login" className="w-full">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="login">Entrar</TabsTrigger>
@@ -116,10 +104,7 @@ function LoginForm() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email: normalizeEmail(email),
-      password,
-    });
+    const { error } = await supabase.auth.signInWithPassword({ email: normalizeEmail(email), password });
     setLoading(false);
     if (error) return toast.error(getSupabaseAuthMessage(error.message));
     toast.success("Bem-vindo de volta!");
@@ -127,19 +112,14 @@ function LoginForm() {
   }
 
   async function onGoogle() {
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: getAuthRedirectTo("/dashboard") },
-    });
+    const { data, error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: getAuthRedirectTo("/dashboard") } });
     if (error) toast.error(getSupabaseAuthMessage(error.message));
     else if (!data.url) navigate({ to: "/dashboard" });
   }
 
   async function onForgot() {
     if (!email) return toast.error("Informe seu e-mail acima primeiro");
-    const { error } = await supabase.auth.resetPasswordForEmail(normalizeEmail(email), {
-      redirectTo: getAuthRedirectTo("/reset-password"),
-    });
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizeEmail(email), { redirectTo: getAuthRedirectTo("/reset-password") });
     if (error) toast.error(getSupabaseAuthMessage(error.message));
     else toast.success("Enviamos um link de recuperação para seu e-mail.");
   }
@@ -147,28 +127,12 @@ function LoginForm() {
   return (
     <form onSubmit={onSubmit} className="mt-6 space-y-4">
       <h2 className="font-display text-2xl font-bold">Entrar</h2>
-      <div>
-        <Label htmlFor="li-email">E-mail</Label>
-        <Input id="li-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-      </div>
-      <div>
-        <Label htmlFor="li-pass">Senha</Label>
-        <Input id="li-pass" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
-      </div>
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        Entrar
-      </Button>
-      <button type="button" onClick={onForgot} className="block w-full text-center text-xs text-muted-foreground hover:text-foreground">
-        Esqueci minha senha
-      </button>
-      <div className="relative py-2">
-        <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border" /></div>
-        <div className="relative flex justify-center"><span className="bg-background px-2 text-xs text-muted-foreground">ou</span></div>
-      </div>
-      <Button type="button" variant="outline" className="w-full" onClick={onGoogle}>
-        Continuar com Google
-      </Button>
+      <div><Label htmlFor="li-email">E-mail</Label><Input id="li-email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></div>
+      <div><Label htmlFor="li-pass">Senha</Label><Input id="li-pass" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+      <Button type="submit" className="w-full" disabled={loading}>{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Entrar</Button>
+      <button type="button" onClick={onForgot} className="block w-full text-center text-xs text-muted-foreground hover:text-foreground">Esqueci minha senha</button>
+      <div className="relative py-2"><div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border" /></div><div className="relative flex justify-center"><span className="bg-background px-2 text-xs text-muted-foreground">ou</span></div></div>
+      <Button type="button" variant="outline" className="w-full" onClick={onGoogle}>Continuar com Google</Button>
     </form>
   );
 }
@@ -176,24 +140,15 @@ function LoginForm() {
 function SignupForm() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({
-    company_name: "",
-    segment: "",
-    phone: "",
-    email: "",
-    password: "",
-    contact_name: "",
-    business_hours: "",
-    services_description: "",
-    communication_tone: "profissional",
-  });
+  const [form, setForm] = useState({ company_name: "", segment: "", phone: "", email: "", password: "", contact_name: "", business_hours: "", services_description: "", communication_tone: "profissional" });
 
-  function upd<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
-    setForm((p) => ({ ...p, [k]: v }));
-  }
+  function upd<K extends keyof typeof form>(k: K, v: (typeof form)[K]) { setForm((p) => ({ ...p, [k]: v })); }
+  const passwordMissing = validateNewPassword(form.password);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const missing = validateNewPassword(form.password);
+    if (missing.length) return toast.error(`A senha precisa ter ${missing.join(", ")}.`);
     setLoading(true);
     const { data, error } = await supabase.auth.signUp({
       email: normalizeEmail(form.email),
@@ -201,33 +156,19 @@ function SignupForm() {
       options: {
         emailRedirectTo: getAuthRedirectTo(),
         data: {
-          company_name: form.company_name.trim(),
-          segment: form.segment.trim(),
-          phone: form.phone.trim(),
-          contact_name: form.contact_name.trim(),
-          business_hours: form.business_hours.trim(),
-          services_description: form.services_description.trim(),
-          communication_tone: form.communication_tone.trim(),
+          company_name: form.company_name.trim(), segment: form.segment.trim(), phone: form.phone.trim(), contact_name: form.contact_name.trim(),
+          business_hours: form.business_hours.trim(), services_description: form.services_description.trim(), communication_tone: form.communication_tone.trim(),
         },
       },
     });
     setLoading(false);
     if (error) return toast.error(getSupabaseAuthMessage(error.message));
-
-    if (data.session) {
-      toast.success("Conta criada!");
-      navigate({ to: "/dashboard" });
-      return;
-    }
-
+    if (data.session) { toast.success("Conta criada!"); navigate({ to: "/dashboard" }); return; }
     toast.success("Conta criada! Verifique seu e-mail para ativar o acesso.");
   }
 
   async function onGoogle() {
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: getAuthRedirectTo("/dashboard") },
-    });
+    const { data, error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: getAuthRedirectTo("/dashboard") } });
     if (error) toast.error(getSupabaseAuthMessage(error.message));
     else if (!data.url) navigate({ to: "/dashboard" });
   }
@@ -236,54 +177,25 @@ function SignupForm() {
     <form onSubmit={onSubmit} className="mt-6 space-y-3">
       <h2 className="font-display text-2xl font-bold">Criar conta da empresa</h2>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div>
-          <Label htmlFor="s-company">Nome da empresa</Label>
-          <Input id="s-company" required value={form.company_name} onChange={(e) => upd("company_name", e.target.value)} />
-        </div>
-        <div>
-          <Label htmlFor="s-seg">Segmento</Label>
-          <Input id="s-seg" placeholder="Ex: estética, moda, restaurante" value={form.segment} onChange={(e) => upd("segment", e.target.value)} />
-        </div>
-        <div>
-          <Label htmlFor="s-name">Nome do responsável</Label>
-          <Input id="s-name" required value={form.contact_name} onChange={(e) => upd("contact_name", e.target.value)} />
-        </div>
-        <div>
-          <Label htmlFor="s-phone">Telefone</Label>
-          <Input id="s-phone" value={form.phone} onChange={(e) => upd("phone", e.target.value)} />
-        </div>
-        <div>
-          <Label htmlFor="s-email">E-mail</Label>
-          <Input id="s-email" type="email" required value={form.email} onChange={(e) => upd("email", e.target.value)} />
-        </div>
+        <div><Label htmlFor="s-company">Nome da empresa</Label><Input id="s-company" required value={form.company_name} onChange={(e) => upd("company_name", e.target.value)} /></div>
+        <div><Label htmlFor="s-seg">Segmento</Label><Input id="s-seg" placeholder="Ex: advocacia, estética, imóveis" value={form.segment} onChange={(e) => upd("segment", e.target.value)} /></div>
+        <div><Label htmlFor="s-name">Nome do responsável</Label><Input id="s-name" required value={form.contact_name} onChange={(e) => upd("contact_name", e.target.value)} /></div>
+        <div><Label htmlFor="s-phone">Telefone</Label><Input id="s-phone" inputMode="tel" value={form.phone} onChange={(e) => upd("phone", e.target.value)} /></div>
+        <div><Label htmlFor="s-email">E-mail</Label><Input id="s-email" type="email" autoComplete="email" required value={form.email} onChange={(e) => upd("email", e.target.value)} /></div>
         <div>
           <Label htmlFor="s-pass">Senha</Label>
-          <Input id="s-pass" type="password" required minLength={6} value={form.password} onChange={(e) => upd("password", e.target.value)} />
+          <Input id="s-pass" type="password" autoComplete="new-password" required minLength={12} value={form.password} onChange={(e) => upd("password", e.target.value)} />
+          <p className={`mt-1 text-[11px] ${form.password && passwordMissing.length === 0 ? "text-green-700" : "text-muted-foreground"}`}>
+            {form.password && passwordMissing.length === 0 ? "Senha forte." : "Use 12+ caracteres com maiúscula, minúscula, número e símbolo."}
+          </p>
         </div>
-        <div className="sm:col-span-2">
-          <Label htmlFor="s-hours">Horário de atendimento</Label>
-          <Input id="s-hours" placeholder="Seg a Sex, 9h às 18h" value={form.business_hours} onChange={(e) => upd("business_hours", e.target.value)} />
-        </div>
-        <div className="sm:col-span-2">
-          <Label htmlFor="s-desc">Descrição dos serviços</Label>
-          <Textarea id="s-desc" rows={3} value={form.services_description} onChange={(e) => upd("services_description", e.target.value)} />
-        </div>
-        <div className="sm:col-span-2">
-          <Label htmlFor="s-tone">Tom de comunicação</Label>
-          <Input id="s-tone" placeholder="Ex: profissional, amigável, descontraído" value={form.communication_tone} onChange={(e) => upd("communication_tone", e.target.value)} />
-        </div>
+        <div className="sm:col-span-2"><Label htmlFor="s-hours">Horário de atendimento</Label><Input id="s-hours" placeholder="Seg a Sex, 9h às 18h" value={form.business_hours} onChange={(e) => upd("business_hours", e.target.value)} /></div>
+        <div className="sm:col-span-2"><Label htmlFor="s-desc">Descrição dos serviços</Label><Textarea id="s-desc" rows={3} value={form.services_description} onChange={(e) => upd("services_description", e.target.value)} /></div>
+        <div className="sm:col-span-2"><Label htmlFor="s-tone">Tom de comunicação</Label><Input id="s-tone" placeholder="Ex: profissional, amigável, descontraído" value={form.communication_tone} onChange={(e) => upd("communication_tone", e.target.value)} /></div>
       </div>
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        Criar conta
-      </Button>
-      <div className="relative py-2">
-        <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border" /></div>
-        <div className="relative flex justify-center"><span className="bg-background px-2 text-xs text-muted-foreground">ou</span></div>
-      </div>
-      <Button type="button" variant="outline" className="w-full" onClick={onGoogle}>
-        Continuar com Google
-      </Button>
+      <Button type="submit" className="w-full" disabled={loading}>{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Criar conta</Button>
+      <div className="relative py-2"><div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border" /></div><div className="relative flex justify-center"><span className="bg-background px-2 text-xs text-muted-foreground">ou</span></div></div>
+      <Button type="button" variant="outline" className="w-full" onClick={onGoogle}>Continuar com Google</Button>
     </form>
   );
 }

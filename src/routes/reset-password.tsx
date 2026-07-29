@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { validateNewPassword } from "./auth";
 
 export const Route = createFileRoute("/reset-password")({
-  head: () => ({ meta: [{ title: "Redefinir senha — Comunica AI" }] }),
+  head: () => ({ meta: [{ title: "Redefinir senha — ChatFacil" }] }),
   component: ResetPassword,
 });
 
@@ -15,9 +16,12 @@ function ResetPassword() {
   const navigate = useNavigate();
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const missing = validateNewPassword(password);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const requirements = validateNewPassword(password);
+    if (requirements.length) return toast.error(`A senha precisa ter ${requirements.join(", ")}.`);
     setLoading(true);
     const { error } = await supabase.auth.updateUser({ password });
     setLoading(false);
@@ -32,7 +36,10 @@ function ResetPassword() {
         <h1 className="font-display text-2xl font-bold">Redefinir senha</h1>
         <div>
           <Label htmlFor="np">Nova senha</Label>
-          <Input id="np" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} />
+          <Input id="np" type="password" autoComplete="new-password" required minLength={12} value={password} onChange={(e) => setPassword(e.target.value)} />
+          <p className={`mt-1 text-xs ${password && missing.length === 0 ? "text-green-700" : "text-muted-foreground"}`}>
+            {password && missing.length === 0 ? "Senha forte." : "Use 12+ caracteres com maiúscula, minúscula, número e símbolo."}
+          </p>
         </div>
         <Button type="submit" className="w-full" disabled={loading}>Salvar</Button>
       </form>

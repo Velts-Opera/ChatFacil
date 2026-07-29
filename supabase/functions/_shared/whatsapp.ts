@@ -14,7 +14,7 @@ export async function metaGet(path: string, accessToken: string) {
   return { ok: res.ok, status: res.status, json };
 }
 
-export async function sendWhatsAppText(accessToken: string, phoneNumberId: string, to: string, message: string) {
+export async function sendWhatsAppText(accessToken: string, phoneNumberId: string, to: string, message: string, signal?: AbortSignal) {
   const res = await fetch(`${graphBase()}/${encodeURIComponent(phoneNumberId)}/messages`, {
     method: "POST",
     headers: {
@@ -28,6 +28,7 @@ export async function sendWhatsAppText(accessToken: string, phoneNumberId: strin
       type: "text",
       text: { preview_url: false, body: message },
     }),
+    signal,
   });
   const json = await res.json().catch(() => ({}));
   return { ok: res.ok, status: res.status, json };
@@ -146,11 +147,9 @@ export async function getChannelSecret(admin: any, channelId: string) {
   if (error) throw error;
   if (!data) return null;
 
-  // New production path: credentials encrypted with APP_ENCRYPTION_KEY.
   const encryptedAccessToken = data.access_token_enc ? await decryptSecret(data.access_token_enc) : null;
   const encryptedAppSecret = data.app_secret_enc ? await decryptSecret(data.app_secret_enc) : null;
 
-  // Legacy fallback keeps old pilot installs working after migration. New connections write only encrypted values.
   return {
     access_token: encryptedAccessToken ?? data.access_token,
     app_secret: encryptedAppSecret ?? data.app_secret ?? null,

@@ -1,4 +1,4 @@
 Deno.serve(() => new Response(
-  JSON.stringify({ error: "Integração legada desativada. Use WhatsApp oficial Meta Cloud API." }),
+  JSON.stringify({ disabled: true }),
   { status: 410, headers: { "content-type": "application/json" } },
 ));
