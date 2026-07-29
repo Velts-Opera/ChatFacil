@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Bot, CheckCircle2, Loader2, RefreshCw, Send, ShieldCheck, Smartphone, TriangleAlert, Wrench } from "lucide-react";
 import { toast } from "sonner";
@@ -17,7 +16,7 @@ export const Route = createFileRoute("/_authenticated/canais")({
   head: () => ({
     meta: [
       { title: "Canais — ChatFacil" },
-      { name: "description", content: "Conecte o WhatsApp Business oficial ao seu agente ChatFacil." },
+      { name: "description", content: "Conecte o WhatsApp ao agente ChatFacil por QR Code no fluxo oficial da Meta." },
     ],
   }),
   component: CanaisPage,
@@ -39,7 +38,6 @@ type Channel = {
   verify_token: string | null;
   webhook_url: string | null;
   last_error: string | null;
-  last_error_code?: string | null;
   connected_at: string | null;
   last_sync_at: string | null;
   verified_name?: string | null;
@@ -47,11 +45,8 @@ type Channel = {
   ai_enabled?: boolean | null;
   auto_reply_enabled?: boolean | null;
   human_handoff_enabled?: boolean | null;
-  app_secret_present?: boolean | null;
   connection_mode?: ConnectionMode | null;
   coexistence_active?: boolean | null;
-  coexistence_last_echo_at?: string | null;
-  coexistence_last_sync_at?: string | null;
 };
 
 async function edgeFunctionErrorMessage(error: unknown, fallback: string) {
@@ -65,7 +60,7 @@ async function edgeFunctionErrorMessage(error: unknown, fallback: string) {
           if (typeof message === "string" && message.trim()) return message;
         }
       } catch {
-        // Fall through to the SDK message.
+        // usa o fallback abaixo
       }
     }
   }
@@ -95,12 +90,14 @@ function CanaisPage() {
 
   useEffect(() => { loadChannel(); }, []);
 
+  const needsOnboarding = !channel || channel.status === "disconnected" || channel.status === "error";
+
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Canais</h1>
         <p className="text-sm text-muted-foreground">
-          Conecte o número empresarial pela Meta. Quem já usa WhatsApp Business pode continuar acompanhando e respondendo pelo celular.
+          O cliente conecta o WhatsApp por QR Code. O QR abre o onboarding oficial da Meta e, ao concluir, o número fica ligado automaticamente ao agente da empresa.
         </p>
       </div>
 
@@ -108,29 +105,33 @@ function CanaisPage() {
         <div className="flex items-center gap-2 rounded-xl border bg-card p-6 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />Carregando WhatsApp…
         </div>
-      ) : channel ? (
-        <OfficialChannel channel={channel} onChanged={loadChannel} isSuperAdmin={isSuperAdmin} />
       ) : (
-        <div className="space-y-4">
-          <MetaOnboardingLink onComplete={loadChannel} />
-          <div className="rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">
-            Para clientes, este é o fluxo padrão. Não é necessário digitar WABA ID, Phone Number ID, token ou App Secret.
-          </div>
-        </div>
+        <>
+          {needsOnboarding && (
+            <div className="space-y-4">
+              <MetaOnboardingLink onComplete={loadChannel} />
+              <div className="rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">
+                Não é necessário informar WABA ID, Phone Number ID, token, App Secret nem usar o antigo conector de WhatsApp Web. O vínculo é feito pelo QR e pelo fluxo oficial da Meta.
+              </div>
+            </div>
+          )}
+
+          {channel && <OfficialChannel channel={channel} onChanged={loadChannel} isSuperAdmin={isSuperAdmin} />}
+        </>
       )}
 
-      <div className="rounded-xl border bg-card p-5">
+      <section className="rounded-xl border bg-card p-5">
         <div className="flex items-start gap-3">
           <Bot className="mt-0.5 h-5 w-5 text-primary" />
           <div className="flex-1">
-            <div className="font-medium">O agente é configurado separadamente</div>
+            <div className="font-medium">Agente conectado automaticamente</div>
             <p className="mt-1 text-sm text-muted-foreground">
-              Escolha a profissão, explique como sua empresa atende e deixe a IA montar as instruções. O número conectado usa esse agente.
+              O WhatsApp conectado nesta empresa usa o agente configurado para ela. Profissão, instruções, base de conhecimento e regras continuam sendo configurados na página do agente.
             </p>
             <Button asChild variant="outline" size="sm" className="mt-3"><Link to="/agente-ia">Configurar meu agente</Link></Button>
           </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
@@ -175,13 +176,13 @@ function OfficialChannel({ channel, onChanged, isSuperAdmin }: { channel: Channe
   }
 
   async function disconnect() {
-    if (!confirm("Desconectar este WhatsApp do ChatFacil? O agente deixará de enviar mensagens por esse canal.")) return;
+    if (!confirm("Desconectar este WhatsApp do ChatFacil? O agente deixará de responder por esse número.")) return;
     setDisconnecting(true);
     try {
       const { data, error } = await supabase.functions.invoke("whatsapp-disconnect-channel", { body: { channel_id: channel.id } });
       if (error) throw error;
       if (!data?.ok) throw new Error(data?.error ?? "Não foi possível desconectar.");
-      toast.success("Canal desconectado.");
+      toast.success("Canal desconectado. Gere um novo QR para conectar novamente.");
       await onChanged();
     } catch (error) {
       toast.error(await edgeFunctionErrorMessage(error, "Falha ao desconectar."));
@@ -196,15 +197,14 @@ function OfficialChannel({ channel, onChanged, isSuperAdmin }: { channel: Channe
             <div className="rounded-lg bg-green-100 p-2 text-green-800"><ShieldCheck className="h-5 w-5" /></div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="font-semibold">{channel.verified_name || channel.name || "WhatsApp oficial"}</h2>
+                <h2 className="font-semibold">{channel.verified_name || channel.name || "WhatsApp"}</h2>
                 <StatusBadge status={channel.status} />
-                {coexistence && <Badge variant="outline">WhatsApp Business + IA</Badge>}
               </div>
               <div className="mt-1 text-sm text-muted-foreground">{channel.phone_number || "Número ainda não sincronizado"}</div>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={healthCheck} disabled={healthChecking}>
+            <Button variant="outline" size="sm" onClick={healthCheck} disabled={healthChecking || channel.status !== "connected"}>
               {healthChecking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Verificar
             </Button>
             <Button variant="outline" size="sm" onClick={() => setSendOpen(true)} disabled={channel.status !== "connected"}><Send className="mr-2 h-4 w-4" />Enviar teste</Button>
@@ -218,20 +218,16 @@ function OfficialChannel({ channel, onChanged, isSuperAdmin }: { channel: Channe
         )}
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Info label="Modo" value={coexistence ? "WhatsApp Business + Cloud API" : "Cloud API dedicada"} />
+          <Info label="Modo" value={coexistence ? "WhatsApp Business + IA" : "Meta Cloud API"} />
           <Info label="Qualidade" value={channel.quality_rating || "—"} />
           <Info label="Última sincronização" value={fmt(channel.last_sync_at)} />
-          <Info label="Celular sincronizado" value={coexistence ? (channel.coexistence_active ? "Sim" : "Aguardando confirmação") : "Não se aplica"} />
+          <Info label="Celular" value={coexistence ? (channel.coexistence_active ? "Sincronizado" : "Aguardando confirmação") : "Número dedicado"} />
         </div>
 
-        {coexistence ? (
+        {coexistence && (
           <div className="mt-4 flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
             <Smartphone className="mt-0.5 h-4 w-4 shrink-0" />
-            <div><strong>Você pode continuar usando o WhatsApp Business no celular.</strong> Quando uma pessoa responder pelo aplicativo, o ChatFacil registra o atendimento humano e pausa a IA naquela conversa.</div>
-          </div>
-        ) : (
-          <div className="mt-4 rounded-lg bg-muted p-4 text-sm text-muted-foreground">
-            Este número está em modo Cloud API dedicada. Para manter o WhatsApp Business no telefone e a IA no mesmo número, reconecte futuramente pelo modo de coexistência.
+            <div>O WhatsApp Business pode continuar no celular. Uma resposta humana pausa a IA naquela conversa.</div>
           </div>
         )}
       </section>
@@ -240,16 +236,18 @@ function OfficialChannel({ channel, onChanged, isSuperAdmin }: { channel: Channe
         <div className="mb-4 flex items-center gap-2"><Bot className="h-5 w-5 text-primary" /><h2 className="font-medium">Atendimento automático</h2></div>
         <div className="space-y-4">
           <ToggleRow title="Agente habilitado neste número" description="Permite que o agente processe novas mensagens." checked={aiEnabled} disabled={savingSettings} onCheckedChange={(value) => saveAiSettings(value, value ? autoReply : false)} />
-          <ToggleRow title="Responder automaticamente" description="Quando uma conversa não está com atendimento humano, o agente pode responder sozinho." checked={autoReply} disabled={savingSettings || !aiEnabled} onCheckedChange={(value) => saveAiSettings(aiEnabled, value)} />
+          <ToggleRow title="Responder automaticamente" description="Quando a conversa não está em atendimento humano, o agente responde sozinho." checked={autoReply} disabled={savingSettings || !aiEnabled} onCheckedChange={(value) => saveAiSettings(aiEnabled, value)} />
         </div>
       </section>
 
       {isSuperAdmin && <AdminDiagnostics channel={channel} onChanged={onChanged} />}
 
-      <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed p-4">
-        <div className="text-sm text-muted-foreground">Desconectar remove as credenciais armazenadas no ChatFacil. Não use para trocar temporariamente entre IA e humano.</div>
-        <Button variant="destructive" size="sm" onClick={disconnect} disabled={disconnecting}>{disconnecting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Desconectar</Button>
-      </section>
+      {channel.status === "connected" && (
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed p-4">
+          <div className="text-sm text-muted-foreground">Use a desconexão somente para remover este número. Depois disso, o QR de conexão volta a aparecer para o cliente.</div>
+          <Button variant="destructive" size="sm" onClick={disconnect} disabled={disconnecting}>{disconnecting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Desconectar</Button>
+        </section>
+      )}
 
       <SendTestDialog open={sendOpen} onOpenChange={setSendOpen} channelId={channel.id} />
     </div>
@@ -257,7 +255,6 @@ function OfficialChannel({ channel, onChanged, isSuperAdmin }: { channel: Channe
 }
 
 function AdminDiagnostics({ channel, onChanged }: { channel: Channel; onChanged: () => Promise<void> }) {
-  const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [accessToken, setAccessToken] = useState("");
   const [appSecret, setAppSecret] = useState("");
