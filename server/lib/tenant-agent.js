@@ -1,7 +1,10 @@
-const DEFAULT_MODEL = 'gemini-1.5-flash';
+import { greetingForSaoPaulo } from "./greeting-clock.js";
+import { createConversationLock } from "./conversation-lock.js";
+
+const DEFAULT_MODEL = "gemini-1.5-flash";
 
 function cleanPhone(value) {
-  return String(value ?? '').replace(/\D/g, '');
+  return String(value ?? "").replace(/\D/g, "");
 }
 
 function encode(value) {
@@ -16,17 +19,18 @@ export function createTenantAgent({
   logger,
   fetchImpl = globalThis.fetch,
 }) {
-  const baseUrl = String(supabaseUrl ?? '').replace(/\/$/, '');
+  const baseUrl = String(supabaseUrl ?? "").replace(/\/$/, "");
   const enabled = Boolean(baseUrl && serviceRoleKey);
   const aiEnabled = Boolean(geminiApiKey);
+  const conversationLock = createConversationLock();
 
-  if (typeof fetchImpl !== 'function') {
-    throw new TypeError('fetchImpl deve ser uma função');
+  if (typeof fetchImpl !== "function") {
+    throw new TypeError("fetchImpl deve ser uma função");
   }
 
   async function request(tablePath, init = {}) {
-    if (!baseUrl || !serviceRoleKey) throw new Error('SUPABASE_SERVICE_ROLE_KEY não configurada');
-    const authorization = serviceRoleKey.startsWith('sb_secret_')
+    if (!baseUrl || !serviceRoleKey) throw new Error("SUPABASE_SERVICE_ROLE_KEY não configurada");
+    const authorization = serviceRoleKey.startsWith("sb_secret_")
       ? {}
       : { Authorization: `Bearer ${serviceRoleKey}` };
     const response = await fetchImpl(`${baseUrl}/rest/v1/${tablePath}`, {
@@ -34,14 +38,21 @@ export function createTenantAgent({
       headers: {
         apikey: serviceRoleKey,
         ...authorization,
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
         ...(init.headers ?? {}),
       },
     });
     const text = await response.text();
     let body = null;
-    try { body = text ? JSON.parse(text) : null; } catch { body = text; }
-    if (!response.ok) throw new Error(`Supabase ${response.status}: ${typeof body === 'string' ? body : JSON.stringify(body)}`);
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = text;
+    }
+    if (!response.ok)
+      throw new Error(
+        `Supabase ${response.status}: ${typeof body === "string" ? body : JSON.stringify(body)}`,
+      );
     return body;
   }
 
@@ -52,8 +63,8 @@ export function createTenantAgent({
 
   async function updateChannel(channelId, values) {
     await request(`channels?id=eq.${encode(channelId)}`, {
-      method: 'PATCH',
-      headers: { Prefer: 'return=minimal' },
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
       body: JSON.stringify({ ...values, updated_at: new Date().toISOString() }),
     });
   }
@@ -61,15 +72,15 @@ export function createTenantAgent({
   async function upsertContactAndConversation(channel, { waId, pushName, content }) {
     const now = new Date().toISOString();
     const phone = cleanPhone(waId);
-    const name = String(pushName || phone || 'Contato').trim();
+    const name = String(pushName || phone || "Contato").trim();
     let contact = await getOne(
       `contacts?select=id&company_id=eq.${encode(channel.company_id)}&channel_id=eq.${encode(channel.id)}&wa_id=eq.${encode(phone)}&limit=1`,
     );
 
     if (!contact) {
-      contact = await getOne('contacts', {
-        method: 'POST',
-        headers: { Prefer: 'return=representation' },
+      contact = await getOne("contacts", {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
         body: JSON.stringify({
           company_id: channel.company_id,
           channel_id: channel.id,
@@ -77,15 +88,21 @@ export function createTenantAgent({
           profile_name: name,
           phone,
           wa_id: phone,
-          source: 'whatsapp_qr',
+          source: "whatsapp_qr",
           last_interaction_at: now,
         }),
       });
     } else {
       await request(`contacts?id=eq.${encode(contact.id)}`, {
-        method: 'PATCH',
-        headers: { Prefer: 'return=minimal' },
-        body: JSON.stringify({ name, profile_name: name, phone, last_interaction_at: now, updated_at: now }),
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({
+          name,
+          profile_name: name,
+          phone,
+          last_interaction_at: now,
+          updated_at: now,
+        }),
       });
     }
 
@@ -93,30 +110,30 @@ export function createTenantAgent({
       `conversations?select=id,unread_count,ai_handling&company_id=eq.${encode(channel.company_id)}&channel_id=eq.${encode(channel.id)}&contact_id=eq.${encode(contact.id)}&status=neq.resolvida&limit=1`,
     );
     if (!conversation) {
-      conversation = await getOne('conversations', {
-        method: 'POST',
-        headers: { Prefer: 'return=representation' },
+      conversation = await getOne("conversations", {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
         body: JSON.stringify({
           company_id: channel.company_id,
           channel_id: channel.id,
           contact_id: contact.id,
-          channel: 'whatsapp',
-          status: 'aberta',
+          channel: "whatsapp",
+          status: "aberta",
           ai_handling: channel.auto_reply_enabled === true,
           last_message: content,
-          last_message_direction: 'inbound',
+          last_message_direction: "inbound",
           unread_count: 1,
           last_message_at: now,
         }),
       });
     } else {
       await request(`conversations?id=eq.${encode(conversation.id)}`, {
-        method: 'PATCH',
-        headers: { Prefer: 'return=minimal' },
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
         body: JSON.stringify({
-          status: 'aberta',
+          status: "aberta",
           last_message: content,
-          last_message_direction: 'inbound',
+          last_message_direction: "inbound",
           unread_count: Number(conversation.unread_count ?? 0) + 1,
           last_message_at: now,
           updated_at: now,
@@ -130,10 +147,20 @@ export function createTenantAgent({
     };
   }
 
-  async function saveMessage({ channel, conversationId, contactId, content, direction, senderType, messageId, timestamp, agentId }) {
-    const result = await getOne('messages', {
-      method: 'POST',
-      headers: { Prefer: 'return=representation' },
+  async function saveMessage({
+    channel,
+    conversationId,
+    contactId,
+    content,
+    direction,
+    senderType,
+    messageId,
+    timestamp,
+    agentId,
+  }) {
+    const result = await getOne("messages", {
+      method: "POST",
+      headers: { Prefer: "return=representation" },
       body: JSON.stringify({
         company_id: channel.company_id,
         channel_id: channel.id,
@@ -143,8 +170,8 @@ export function createTenantAgent({
         sender_type: senderType,
         ...(agentId ? { agent_id: agentId } : {}),
         content,
-        message_type: 'text',
-        status: direction === 'inbound' ? 'received' : 'sent',
+        message_type: "text",
+        status: direction === "inbound" ? "received" : "sent",
         meta_message_id: messageId ?? null,
         created_at: timestamp ?? new Date().toISOString(),
       }),
@@ -163,22 +190,23 @@ export function createTenantAgent({
       `messages?select=direction,content&conversation_id=eq.${encode(conversationId)}&order=created_at.desc&limit=8`,
     );
     const knowledgeText = knowledge.length
-      ? knowledge.map((item) => `## ${item.title}\n${item.content}`).join('\n\n')
-      : 'Nenhuma base de conhecimento cadastrada.';
+      ? knowledge.map((item) => `## ${item.title}\n${item.content}`).join("\n\n")
+      : "Nenhuma base de conhecimento cadastrada.";
     const quickRepliesText = quickReplies.length
-      ? `\n\nRespostas rápidas:\n${quickReplies.map((item) => `- ${item.title}: ${item.message}`).join('\n')}`
-      : '';
+      ? `\n\nRespostas rápidas:\n${quickReplies.map((item) => `- ${item.title}: ${item.message}`).join("\n")}`
+      : "";
     const historyText = history
       .reverse()
       .slice(0, -1)
-      .map((item) => `${item.direction === 'inbound' ? 'Cliente' : 'Agente'}: ${item.content}`)
-      .join('\n');
-    const tone = channel.communication_tone || 'profissional';
-    const agentName = agent?.agent_name?.trim() || 'Assistente';
+      .map((item) => `${item.direction === "inbound" ? "Cliente" : "Agente"}: ${item.content}`)
+      .join("\n");
+    const greeting = greetingForSaoPaulo();
+    const tone = channel.communication_tone || "profissional";
+    const agentName = agent?.agent_name?.trim() || "Assistente";
     const customPrompt = agent?.system_prompt?.trim()
       ? `\n\nInstruções exclusivas deste agente:\n${agent.system_prompt.trim()}`
-      : '';
-    return `Você é "${agentName}", agente de atendimento exclusivo da empresa "${channel.company_name || 'empresa'}".${customPrompt}\n\nTom: ${tone}.\nServiços: ${channel.services_description || 'não informado'}.\nHorário: ${channel.business_hours || 'não informado'}.\n\nBase de conhecimento:\n${knowledgeText}${quickRepliesText}\n\nHistórico:\n${historyText}\n\nRegras:\n- Responda em PT-BR, em no máximo 3 frases curtas.\n- Use apenas dados da empresa e da base.\n- Não invente preço, horário ou disponibilidade.\n- Se precisar de uma pessoa, diga que vai transferir para um atendente.\n\nMensagem atual do cliente:\n${content}`;
+      : "";
+    return `Você é "${agentName}", agente de atendimento exclusivo da empresa "${channel.company_name || "empresa"}".${customPrompt}\n\nHorário atual em São Paulo: use "${greeting}" se for cumprimentar o cliente agora.\nTom: ${tone}.\nServiços: ${channel.services_description || "não informado"}.\nHorário: ${channel.business_hours || "não informado"}.\n\nBase de conhecimento:\n${knowledgeText}${quickRepliesText}\n\nHistórico:\n${historyText}\n\nRegras:\n- Responda em PT-BR, em no máximo 3 frases curtas.\n- Use apenas dados da empresa e da base.\n- Não invente preço, horário ou disponibilidade.\n- Se precisar de uma pessoa, diga que vai transferir para um atendente.\n\nMensagem atual do cliente:\n${content}`;
   }
 
   async function loadChannel(channelId) {
@@ -210,26 +238,29 @@ export function createTenantAgent({
   async function generateReply(channel, conversationId, content, agent) {
     if (!geminiApiKey) return null;
     const prompt = await buildAgentPrompt(channel, conversationId, content, agent);
-    const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(geminiApiKey)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: Number(agent?.temperature ?? 0.4),
-          maxOutputTokens: Number(agent?.max_tokens ?? 400),
-        },
-      }),
-    });
+    const response = await fetchImpl(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(geminiApiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: Number(agent?.temperature ?? 0.4),
+            maxOutputTokens: Number(agent?.max_tokens ?? 400),
+          },
+        }),
+      },
+    );
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`Gemini ${response.status}: ${JSON.stringify(body)}`);
     return body?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
   }
 
   async function saveAiInteraction(channel, conversationId, agentId, values) {
-    await request('ai_interactions', {
-      method: 'POST',
-      headers: { Prefer: 'return=minimal' },
+    await request("ai_interactions", {
+      method: "POST",
+      headers: { Prefer: "return=minimal" },
       body: JSON.stringify({
         company_id: channel.company_id,
         channel_id: channel.id,
@@ -243,37 +274,74 @@ export function createTenantAgent({
 
   async function handoffConversation(channel, conversationId, reason) {
     if (!channel.human_handoff_enabled) return;
-    await request(`conversations?id=eq.${encode(conversationId)}&company_id=eq.${encode(channel.company_id)}`, {
-      method: 'PATCH',
-      headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({
-        status: 'pendente',
-        ai_handling: false,
-        handoff_reason: reason,
-        updated_at: new Date().toISOString(),
-      }),
-    });
+    await request(
+      `conversations?id=eq.${encode(conversationId)}&company_id=eq.${encode(channel.company_id)}`,
+      {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({
+          status: "pendente",
+          ai_handling: false,
+          handoff_reason: reason,
+          updated_at: new Date().toISOString(),
+        }),
+      },
+    );
   }
 
-  async function processMessage({ channelId, waId, rawJid, pushName, content, messageId, timestamp }) {
+  async function processMessage(payload) {
+    const { channelId, waId } = payload;
+    return conversationLock.run(`${channelId}:${waId}`, () => processMessageUnlocked(payload));
+  }
+
+  async function processMessageUnlocked({
+    channelId,
+    waId,
+    rawJid,
+    pushName,
+    content,
+    messageId,
+    timestamp,
+  }) {
     const channel = await loadChannel(channelId);
     const agent = await loadAgent(channel);
     if (!channel) throw new Error(`Canal QR ${channelId} não encontrado`);
     if (messageId) {
-      const existing = await getOne(`messages?select=id&company_id=eq.${encode(channel.company_id)}&channel_id=eq.${encode(channelId)}&meta_message_id=eq.${encode(messageId)}&limit=1`);
+      const existing = await getOne(
+        `messages?select=id&company_id=eq.${encode(channel.company_id)}&channel_id=eq.${encode(channelId)}&meta_message_id=eq.${encode(messageId)}&limit=1`,
+      );
       if (existing) return null;
     }
-    const { contactId, conversationId, aiHandling } = await upsertContactAndConversation(channel, { waId, pushName, content });
-    const inbound = await saveMessage({ channel, conversationId, contactId, content, direction: 'inbound', senderType: 'contact', messageId, timestamp });
-    if (!channel.ai_enabled || !channel.auto_reply_enabled || !aiHandling || agent?.is_enabled === false) return null;
+    const { contactId, conversationId, aiHandling } = await upsertContactAndConversation(channel, {
+      waId,
+      pushName,
+      content,
+    });
+    const inbound = await saveMessage({
+      channel,
+      conversationId,
+      contactId,
+      content,
+      direction: "inbound",
+      senderType: "contact",
+      messageId,
+      timestamp,
+    });
+    if (
+      !channel.ai_enabled ||
+      !channel.auto_reply_enabled ||
+      !aiHandling ||
+      agent?.is_enabled === false
+    )
+      return null;
 
     if (!geminiApiKey) {
-      await handoffConversation(channel, conversationId, 'GEMINI_API_KEY ausente');
+      await handoffConversation(channel, conversationId, "GEMINI_API_KEY ausente");
       await saveAiInteraction(channel, conversationId, agent?.id, {
         inbound_message_id: inbound?.id ?? null,
-        status: 'error',
+        status: "error",
         input: content,
-        error_message: 'GEMINI_API_KEY ausente',
+        error_message: "GEMINI_API_KEY ausente",
       });
       return null;
     }
@@ -283,11 +351,14 @@ export function createTenantAgent({
       reply = await generateReply(channel, conversationId, content, agent);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      logger?.error?.({ error, channelId, conversationId }, '[tenant-agent] Falha ao gerar resposta');
-      await handoffConversation(channel, conversationId, 'Falha ao gerar resposta da IA');
+      logger?.error?.(
+        { error, channelId, conversationId },
+        "[tenant-agent] Falha ao gerar resposta",
+      );
+      await handoffConversation(channel, conversationId, "Falha ao gerar resposta da IA");
       await saveAiInteraction(channel, conversationId, agent?.id, {
         inbound_message_id: inbound?.id ?? null,
-        status: 'error',
+        status: "error",
         input: content,
         error_message: errorMessage,
       });
@@ -296,13 +367,13 @@ export function createTenantAgent({
 
     if (!reply) {
       if (channel.handoff_when_unknown) {
-        await handoffConversation(channel, conversationId, 'IA não respondeu com segurança');
+        await handoffConversation(channel, conversationId, "IA não respondeu com segurança");
       }
       await saveAiInteraction(channel, conversationId, agent?.id, {
         inbound_message_id: inbound?.id ?? null,
-        status: 'error',
+        status: "error",
         input: content,
-        error_message: 'IA não retornou uma resposta',
+        error_message: "IA não retornou uma resposta",
       });
       return null;
     }
@@ -312,27 +383,30 @@ export function createTenantAgent({
       conversationId,
       contactId,
       content: reply,
-      direction: 'outbound',
-      senderType: 'ai',
+      direction: "outbound",
+      senderType: "ai",
       agentId: agent?.id,
     });
     const needsHuman = channel.human_handoff_enabled && /atendente|humano|transfer/i.test(reply);
-    await request(`conversations?id=eq.${encode(conversationId)}&company_id=eq.${encode(channel.company_id)}`, {
-      method: 'PATCH',
-      headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({
-        last_message: reply,
-        last_message_direction: 'outbound',
-        last_message_at: new Date().toISOString(),
-        ai_handling: !needsHuman,
-        ...(needsHuman ? { status: 'pendente', handoff_reason: 'ai_requested_human' } : {}),
-        updated_at: new Date().toISOString(),
-      }),
-    });
+    await request(
+      `conversations?id=eq.${encode(conversationId)}&company_id=eq.${encode(channel.company_id)}`,
+      {
+        method: "PATCH",
+        headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({
+          last_message: reply,
+          last_message_direction: "outbound",
+          last_message_at: new Date().toISOString(),
+          ai_handling: !needsHuman,
+          ...(needsHuman ? { status: "pendente", handoff_reason: "ai_requested_human" } : {}),
+          updated_at: new Date().toISOString(),
+        }),
+      },
+    );
     await saveAiInteraction(channel, conversationId, agent?.id, {
       inbound_message_id: inbound?.id ?? null,
       outbound_message_id: outbound?.id ?? null,
-      status: 'completed',
+      status: "completed",
       input: content,
       output: reply,
     });
