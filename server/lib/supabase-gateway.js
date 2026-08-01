@@ -247,9 +247,17 @@ export function createSupabaseGateway({
     return data;
   }
 
+  async function listNonTerminalQrChannels() {
+    const rows = await rest(
+      `channels?select=id,status&provider=eq.qr_code&status=in.(connecting,qr_pending,reconnecting)`,
+    );
+    return Array.isArray(rows) ? rows : [];
+  }
+
   return {
     authorizeChannel,
     getChannel,
+    listNonTerminalQrChannels,
     recordQrOutbound,
     resolveDestination,
     sendMetaMessage,

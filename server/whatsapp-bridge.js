@@ -4,6 +4,7 @@ import { createSupabaseGateway } from "./lib/supabase-gateway.js";
 import { createTenantAgent } from "./lib/tenant-agent.js";
 import { SessionManager } from "./lib/session-manager.js";
 import { createWhatsappApp } from "./lib/whatsapp-api.js";
+import { reconcileGhostChannels } from "./lib/reconcile-channels.js";
 
 function required(name) {
   const value = process.env[name]?.trim();
@@ -42,9 +43,23 @@ const server = app.listen(port, host, () => {
   logger.info({ host, port }, "ChatFacil WhatsApp API iniciada");
   sessionManager
     .restore({ canRestore: (channelId) => gateway.canRestoreChannel(channelId) })
-    .then((restored) =>
-      logger.info({ restored: restored.length }, "Restauração de sessões concluída"),
-    )
+    .then(async (restored) => {
+      logger.info({ restored: restored.length }, "Restauração de sessões concluída");
+      try {
+        const staleChannels = await gateway.listNonTerminalQrChannels();
+        const { reconciled, failed } = await reconcileGhostChannels({
+          staleChannels,
+          restoredChannelIds: new Set(restored),
+          updateChannel: gateway.updateChannel,
+          logger,
+        });
+        if (reconciled.length || failed.length) {
+          logger.info({ reconciled, failed }, "Reconciliação de estados fantasma concluída");
+        }
+      } catch (error) {
+        logger.error({ error }, "Falha ao reconciliar estados fantasma no boot");
+      }
+    })
     .catch((error) => logger.error({ error }, "Falha na restauração de sessões"));
 });
 
