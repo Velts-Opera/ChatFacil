@@ -104,9 +104,23 @@ export const whatsappApi = {
       `/api/whatsapp/channels/${encodeURIComponent(channelId)}/status`,
     ),
   qr: (channelId: string) =>
-    request<{ status: string; qr: string | null; phoneNumber: string | null }>(
-      `/api/whatsapp/channels/${encodeURIComponent(channelId)}/qr`,
-    ),
+    request<{
+      status: string;
+      qr: string | null;
+      pairingCode: string | null;
+      qrExpiresAt: number | null;
+      phoneNumber: string | null;
+    }>(`/api/whatsapp/channels/${encodeURIComponent(channelId)}/qr`),
+  pair: (channelId: string, phoneNumber: string) =>
+    request<{
+      ok: boolean;
+      status: string;
+      pairingCode: string | null;
+      qrExpiresAt: number | null;
+    }>(`/api/whatsapp/channels/${encodeURIComponent(channelId)}/pair`, {
+      method: "POST",
+      body: JSON.stringify({ phone_number: phoneNumber }),
+    }),
   disconnect: (channelId: string) =>
     request<{ ok: boolean; status: string }>(
       `/api/whatsapp/channels/${encodeURIComponent(channelId)}/disconnect`,

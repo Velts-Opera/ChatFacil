@@ -116,6 +116,9 @@ export async function createBaileysConnection({
   });
 
   return {
+    async requestPairingCode(phoneNumber) {
+      return socket.requestPairingCode(phoneNumber);
+    },
     async sendMessage(to, message) {
       return socket.sendMessage(toJid(to), { text: message });
     },

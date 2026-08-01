@@ -83,6 +83,9 @@ function fixture() {
     async connect() {
       return this.getQr();
     },
+    async requestPairingCode(_channelId, phoneNumber) {
+      return { ...this.getQr(), pairingCode: `PAIR-${phoneNumber}` };
+    },
     async disconnect() {},
   };
   return createWhatsappApp({
@@ -94,10 +97,10 @@ function fixture() {
 }
 
 async function withServer(run) {
-  const server = fixture().listen(0, "::1");
+  const server = fixture().listen(0, "127.0.0.1");
   await once(server, "listening");
   const address = server.address();
-  const baseUrl = `http://[::1]:${address.port}`;
+  const baseUrl = `http://127.0.0.1:${address.port}`;
   try {
     await run(baseUrl);
   } finally {
@@ -191,5 +194,18 @@ test("CORS retorna Access-Control-Allow-Credentials em requisições autenticada
     });
     assert.equal(response.headers.get("access-control-allow-credentials"), "true");
     assert.equal(response.headers.get("access-control-allow-origin"), "https://app.example.com");
+  });
+});
+
+test("POST /pair devolve o código de pareamento do canal autenticado", async () => {
+  await withServer(async (baseUrl) => {
+    const res = await fetch(`${baseUrl}/api/whatsapp/channels/${CHANNEL_A}/pair`, {
+      method: "POST",
+      headers: { Authorization: "Bearer token-a", "Content-Type": "application/json" },
+      body: JSON.stringify({ phone_number: "5522999998888" }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.pairingCode, "PAIR-5522999998888");
   });
 });

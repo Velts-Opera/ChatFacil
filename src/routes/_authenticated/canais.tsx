@@ -4,19 +4,40 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Bot, CheckCircle2, Loader2, RefreshCw, Send, ShieldCheck, Smartphone, TriangleAlert, Wrench } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Bot,
+  CheckCircle2,
+  Loader2,
+  RefreshCw,
+  Send,
+  ShieldCheck,
+  Smartphone,
+  TriangleAlert,
+  Wrench,
+} from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { MetaOnboardingLink } from "@/components/meta-embedded-signup";
+import { WhatsAppQrConnect } from "@/components/whatsapp-qr-connect";
 import { useSuperAdmin } from "@/hooks/use-super-admin";
 import { formatWhatsAppApiError, sendWhatsAppMessage } from "@/lib/whatsapp/api-client";
+import type { ConnectionStatus } from "@/lib/whatsapp/provider";
 
 export const Route = createFileRoute("/_authenticated/canais")({
   head: () => ({
     meta: [
       { title: "Canais — ChatFacil" },
-      { name: "description", content: "Conecte o WhatsApp ao agente ChatFacil por QR Code no fluxo oficial da Meta." },
+      {
+        name: "description",
+        content: "Conecte o WhatsApp ao agente ChatFacil por QR Code no fluxo oficial da Meta.",
+      },
     ],
   }),
   component: CanaisPage,
@@ -64,59 +85,98 @@ async function edgeFunctionErrorMessage(error: unknown, fallback: string) {
       }
     }
   }
-  if (error instanceof Error && error.message && !error.message.includes("non-2xx status code")) return error.message;
+  if (error instanceof Error && error.message && !error.message.includes("non-2xx status code"))
+    return error.message;
   return fallback;
 }
 
 function CanaisPage() {
   const { isSuperAdmin } = useSuperAdmin();
-  const [channel, setChannel] = useState<Channel | null>(null);
+  const [qrChannel, setQrChannel] = useState<Channel | null>(null);
+  const [metaChannel, setMetaChannel] = useState<Channel | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showMetaAdvanced, setShowMetaAdvanced] = useState(false);
 
-  async function loadChannel() {
+  async function loadChannels() {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("channel_public_view" as any)
-      .select("*")
-      .eq("type", "whatsapp")
-      .eq("provider", "meta_cloud_api")
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (error) toast.error(error.message);
-    setChannel((data as Channel | null) ?? null);
+    const [qrResult, metaResult] = await Promise.all([
+      supabase
+        .from("channel_public_view" as any)
+        .select("*")
+        .eq("type", "whatsapp")
+        .eq("provider", "qr_code")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("channel_public_view" as any)
+        .select("*")
+        .eq("type", "whatsapp")
+        .eq("provider", "meta_cloud_api")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    if (qrResult.error) toast.error(qrResult.error.message);
+    setQrChannel((qrResult.data as Channel | null) ?? null);
+    setMetaChannel((metaResult.data as Channel | null) ?? null);
     setLoading(false);
   }
 
-  useEffect(() => { loadChannel(); }, []);
-
-  const needsOnboarding = !channel || channel.status === "disconnected" || channel.status === "error";
+  useEffect(() => {
+    loadChannels();
+  }, []);
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Canais</h1>
         <p className="text-sm text-muted-foreground">
-          O cliente conecta o WhatsApp por QR Code. O QR abre o onboarding oficial da Meta e, ao concluir, o número fica ligado automaticamente ao agente da empresa.
+          Conecte o WhatsApp lendo o QR Code ou usando o código de pareamento pelo número. O agente
+          da sua empresa já está pronto para atender.
         </p>
       </div>
 
       {loading ? (
         <div className="flex items-center gap-2 rounded-xl border bg-card p-6 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />Carregando WhatsApp…
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Carregando WhatsApp…
         </div>
       ) : (
         <>
-          {needsOnboarding && (
-            <div className="space-y-4">
-              <MetaOnboardingLink onComplete={loadChannel} />
-              <div className="rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">
-                Não é necessário informar WABA ID, Phone Number ID, token, App Secret nem usar o antigo conector de WhatsApp Web. O vínculo é feito pelo QR e pelo fluxo oficial da Meta.
-              </div>
-            </div>
+          {qrChannel && (
+            <section className="rounded-xl border bg-card p-6 shadow-sm">
+              <WhatsAppQrConnect
+                channelId={qrChannel.id}
+                initialStatus={qrChannel.status as ConnectionStatus}
+                onConnected={() => loadChannels()}
+                onDisconnected={() => loadChannels()}
+              />
+            </section>
           )}
 
-          {channel && <OfficialChannel channel={channel} onChanged={loadChannel} isSuperAdmin={isSuperAdmin} />}
+          {metaChannel && (
+            <OfficialChannel
+              channel={metaChannel}
+              onChanged={loadChannels}
+              isSuperAdmin={isSuperAdmin}
+            />
+          )}
+
+          {!metaChannel && (
+            <details
+              className="rounded-xl border bg-muted/20 p-4"
+              open={showMetaAdvanced}
+              onToggle={(e) => setShowMetaAdvanced((e.target as HTMLDetailsElement).open)}
+            >
+              <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
+                Opção avançada: conectar pela API oficial da Meta
+              </summary>
+              <div className="mt-4">
+                <MetaOnboardingLink onComplete={loadChannels} />
+              </div>
+            </details>
+          )}
         </>
       )}
 
@@ -126,9 +186,13 @@ function CanaisPage() {
           <div className="flex-1">
             <div className="font-medium">Agente conectado automaticamente</div>
             <p className="mt-1 text-sm text-muted-foreground">
-              O WhatsApp conectado nesta empresa usa o agente configurado para ela. Profissão, instruções, base de conhecimento e regras continuam sendo configurados na página do agente.
+              O WhatsApp conectado nesta empresa usa o agente configurado para ela. Profissão,
+              instruções, base de conhecimento e regras continuam sendo configurados na página do
+              agente.
             </p>
-            <Button asChild variant="outline" size="sm" className="mt-3"><Link to="/agente-ia">Configurar meu agente</Link></Button>
+            <Button asChild variant="outline" size="sm" className="mt-3">
+              <Link to="/agente-ia">Configurar meu agente</Link>
+            </Button>
           </div>
         </div>
       </section>
@@ -136,7 +200,15 @@ function CanaisPage() {
   );
 }
 
-function OfficialChannel({ channel, onChanged, isSuperAdmin }: { channel: Channel; onChanged: () => Promise<void>; isSuperAdmin: boolean }) {
+function OfficialChannel({
+  channel,
+  onChanged,
+  isSuperAdmin,
+}: {
+  channel: Channel;
+  onChanged: () => Promise<void>;
+  isSuperAdmin: boolean;
+}) {
   const [healthChecking, setHealthChecking] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
@@ -153,7 +225,10 @@ function OfficialChannel({ channel, onChanged, isSuperAdmin }: { channel: Channe
 
   async function saveAiSettings(nextAi: boolean, nextAuto: boolean) {
     setSavingSettings(true);
-    const { error } = await supabase.from("channels").update({ ai_enabled: nextAi, auto_reply_enabled: nextAuto }).eq("id", channel.id);
+    const { error } = await supabase
+      .from("channels")
+      .update({ ai_enabled: nextAi, auto_reply_enabled: nextAuto })
+      .eq("id", channel.id);
     setSavingSettings(false);
     if (error) return toast.error(error.message);
     setAiEnabled(nextAi);
@@ -165,28 +240,41 @@ function OfficialChannel({ channel, onChanged, isSuperAdmin }: { channel: Channe
   async function healthCheck() {
     setHealthChecking(true);
     try {
-      const { data, error } = await supabase.functions.invoke("whatsapp-health-check", { body: { channel_id: channel.id } });
+      const { data, error } = await supabase.functions.invoke("whatsapp-health-check", {
+        body: { channel_id: channel.id },
+      });
       if (error) throw error;
       if (!data?.ok) throw new Error(data?.error ?? "A Meta não confirmou a conexão.");
       toast.success(`WhatsApp saudável${data.latency_ms ? ` · ${data.latency_ms}ms` : ""}`);
       await onChanged();
     } catch (error) {
       toast.error(await edgeFunctionErrorMessage(error, "Falha ao verificar o WhatsApp."));
-    } finally { setHealthChecking(false); }
+    } finally {
+      setHealthChecking(false);
+    }
   }
 
   async function disconnect() {
-    if (!confirm("Desconectar este WhatsApp do ChatFacil? O agente deixará de responder por esse número.")) return;
+    if (
+      !confirm(
+        "Desconectar este WhatsApp do ChatFacil? O agente deixará de responder por esse número.",
+      )
+    )
+      return;
     setDisconnecting(true);
     try {
-      const { data, error } = await supabase.functions.invoke("whatsapp-disconnect-channel", { body: { channel_id: channel.id } });
+      const { data, error } = await supabase.functions.invoke("whatsapp-disconnect-channel", {
+        body: { channel_id: channel.id },
+      });
       if (error) throw error;
       if (!data?.ok) throw new Error(data?.error ?? "Não foi possível desconectar.");
       toast.success("Canal desconectado. Gere um novo QR para conectar novamente.");
       await onChanged();
     } catch (error) {
       toast.error(await edgeFunctionErrorMessage(error, "Falha ao desconectar."));
-    } finally { setDisconnecting(false); }
+    } finally {
+      setDisconnecting(false);
+    }
   }
 
   return (
@@ -194,26 +282,53 @@ function OfficialChannel({ channel, onChanged, isSuperAdmin }: { channel: Channe
       <section className="rounded-xl border bg-card p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-start gap-3">
-            <div className="rounded-lg bg-green-100 p-2 text-green-800"><ShieldCheck className="h-5 w-5" /></div>
+            <div className="rounded-lg bg-green-100 p-2 text-green-800">
+              <ShieldCheck className="h-5 w-5" />
+            </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="font-semibold">{channel.verified_name || channel.name || "WhatsApp"}</h2>
+                <h2 className="font-semibold">
+                  {channel.verified_name || channel.name || "WhatsApp"}
+                </h2>
                 <StatusBadge status={channel.status} />
               </div>
-              <div className="mt-1 text-sm text-muted-foreground">{channel.phone_number || "Número ainda não sincronizado"}</div>
+              <div className="mt-1 text-sm text-muted-foreground">
+                {channel.phone_number || "Número ainda não sincronizado"}
+              </div>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={healthCheck} disabled={healthChecking || channel.status !== "connected"}>
-              {healthChecking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Verificar
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={healthCheck}
+              disabled={healthChecking || channel.status !== "connected"}
+            >
+              {healthChecking ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Verificar
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setSendOpen(true)} disabled={channel.status !== "connected"}><Send className="mr-2 h-4 w-4" />Enviar teste</Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSendOpen(true)}
+              disabled={channel.status !== "connected"}
+            >
+              <Send className="mr-2 h-4 w-4" />
+              Enviar teste
+            </Button>
           </div>
         </div>
 
         {channel.last_error && (
           <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" /><div><strong>Erro:</strong> {channel.last_error}</div>
+            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <strong>Erro:</strong> {channel.last_error}
+            </div>
           </div>
         )}
 
@@ -221,22 +336,49 @@ function OfficialChannel({ channel, onChanged, isSuperAdmin }: { channel: Channe
           <Info label="Modo" value={coexistence ? "WhatsApp Business + IA" : "Meta Cloud API"} />
           <Info label="Qualidade" value={channel.quality_rating || "—"} />
           <Info label="Última sincronização" value={fmt(channel.last_sync_at)} />
-          <Info label="Celular" value={coexistence ? (channel.coexistence_active ? "Sincronizado" : "Aguardando confirmação") : "Número dedicado"} />
+          <Info
+            label="Celular"
+            value={
+              coexistence
+                ? channel.coexistence_active
+                  ? "Sincronizado"
+                  : "Aguardando confirmação"
+                : "Número dedicado"
+            }
+          />
         </div>
 
         {coexistence && (
           <div className="mt-4 flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
             <Smartphone className="mt-0.5 h-4 w-4 shrink-0" />
-            <div>O WhatsApp Business pode continuar no celular. Uma resposta humana pausa a IA naquela conversa.</div>
+            <div>
+              O WhatsApp Business pode continuar no celular. Uma resposta humana pausa a IA naquela
+              conversa.
+            </div>
           </div>
         )}
       </section>
 
       <section className="rounded-xl border bg-card p-5 shadow-sm">
-        <div className="mb-4 flex items-center gap-2"><Bot className="h-5 w-5 text-primary" /><h2 className="font-medium">Atendimento automático</h2></div>
+        <div className="mb-4 flex items-center gap-2">
+          <Bot className="h-5 w-5 text-primary" />
+          <h2 className="font-medium">Atendimento automático</h2>
+        </div>
         <div className="space-y-4">
-          <ToggleRow title="Agente habilitado neste número" description="Permite que o agente processe novas mensagens." checked={aiEnabled} disabled={savingSettings} onCheckedChange={(value) => saveAiSettings(value, value ? autoReply : false)} />
-          <ToggleRow title="Responder automaticamente" description="Quando a conversa não está em atendimento humano, o agente responde sozinho." checked={autoReply} disabled={savingSettings || !aiEnabled} onCheckedChange={(value) => saveAiSettings(aiEnabled, value)} />
+          <ToggleRow
+            title="Agente habilitado neste número"
+            description="Permite que o agente processe novas mensagens."
+            checked={aiEnabled}
+            disabled={savingSettings}
+            onCheckedChange={(value) => saveAiSettings(value, value ? autoReply : false)}
+          />
+          <ToggleRow
+            title="Responder automaticamente"
+            description="Quando a conversa não está em atendimento humano, o agente responde sozinho."
+            checked={autoReply}
+            disabled={savingSettings || !aiEnabled}
+            onCheckedChange={(value) => saveAiSettings(aiEnabled, value)}
+          />
         </div>
       </section>
 
@@ -244,8 +386,13 @@ function OfficialChannel({ channel, onChanged, isSuperAdmin }: { channel: Channe
 
       {channel.status === "connected" && (
         <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed p-4">
-          <div className="text-sm text-muted-foreground">Use a desconexão somente para remover este número. Depois disso, o QR de conexão volta a aparecer para o cliente.</div>
-          <Button variant="destructive" size="sm" onClick={disconnect} disabled={disconnecting}>{disconnecting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Desconectar</Button>
+          <div className="text-sm text-muted-foreground">
+            Use a desconexão somente para remover este número. Depois disso, o QR de conexão volta a
+            aparecer para o cliente.
+          </div>
+          <Button variant="destructive" size="sm" onClick={disconnect} disabled={disconnecting}>
+            {disconnecting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Desconectar
+          </Button>
         </section>
       )}
 
@@ -254,7 +401,13 @@ function OfficialChannel({ channel, onChanged, isSuperAdmin }: { channel: Channe
   );
 }
 
-function AdminDiagnostics({ channel, onChanged }: { channel: Channel; onChanged: () => Promise<void> }) {
+function AdminDiagnostics({
+  channel,
+  onChanged,
+}: {
+  channel: Channel;
+  onChanged: () => Promise<void>;
+}) {
   const [saving, setSaving] = useState(false);
   const [accessToken, setAccessToken] = useState("");
   const [appSecret, setAppSecret] = useState("");
@@ -287,25 +440,66 @@ function AdminDiagnostics({ channel, onChanged }: { channel: Channel; onChanged:
       await onChanged();
     } catch (error) {
       toast.error(await edgeFunctionErrorMessage(error, "Falha ao validar configuração manual."));
-    } finally { setSaving(false); }
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <details className="rounded-xl border bg-card p-5">
-      <summary className="flex cursor-pointer list-none items-center gap-2 font-medium"><Wrench className="h-4 w-4" />Diagnóstico técnico do administrador</summary>
+      <summary className="flex cursor-pointer list-none items-center gap-2 font-medium">
+        <Wrench className="h-4 w-4" />
+        Diagnóstico técnico do administrador
+      </summary>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <Field label="Phone Number ID"><Input value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} /></Field>
-        <Field label="WABA ID"><Input value={wabaId} onChange={(e) => setWabaId(e.target.value)} /></Field>
-        <Field label="Verify Token"><Input value={verifyToken} onChange={(e) => setVerifyToken(e.target.value)} /></Field>
-        <Field label="Access Token novo"><Input type="password" autoComplete="off" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} placeholder="Deixe vazio para manter o atual" /></Field>
-        <Field label="App Secret novo"><Input type="password" autoComplete="off" value={appSecret} onChange={(e) => setAppSecret(e.target.value)} placeholder="Deixe vazio para manter o atual" /></Field>
+        <Field label="Phone Number ID">
+          <Input value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} />
+        </Field>
+        <Field label="WABA ID">
+          <Input value={wabaId} onChange={(e) => setWabaId(e.target.value)} />
+        </Field>
+        <Field label="Verify Token">
+          <Input value={verifyToken} onChange={(e) => setVerifyToken(e.target.value)} />
+        </Field>
+        <Field label="Access Token novo">
+          <Input
+            type="password"
+            autoComplete="off"
+            value={accessToken}
+            onChange={(e) => setAccessToken(e.target.value)}
+            placeholder="Deixe vazio para manter o atual"
+          />
+        </Field>
+        <Field label="App Secret novo">
+          <Input
+            type="password"
+            autoComplete="off"
+            value={appSecret}
+            onChange={(e) => setAppSecret(e.target.value)}
+            placeholder="Deixe vazio para manter o atual"
+          />
+        </Field>
       </div>
-      <Button className="mt-4" onClick={saveAndTest} disabled={saving || !phoneNumberId || !wabaId || !verifyToken}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Salvar e testar API real</Button>
+      <Button
+        className="mt-4"
+        onClick={saveAndTest}
+        disabled={saving || !phoneNumberId || !wabaId || !verifyToken}
+      >
+        {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Salvar e testar API real
+      </Button>
     </details>
   );
 }
 
-function SendTestDialog({ open, onOpenChange, channelId }: { open: boolean; onOpenChange: (open: boolean) => void; channelId: string }) {
+function SendTestDialog({
+  open,
+  onOpenChange,
+  channelId,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  channelId: string;
+}) {
   const [to, setTo] = useState("");
   const [message, setMessage] = useState("Olá! Esta é uma mensagem de teste do ChatFacil.");
   const [sending, setSending] = useState(false);
@@ -314,47 +508,120 @@ function SendTestDialog({ open, onOpenChange, channelId }: { open: boolean; onOp
     if (!to.trim() || !message.trim()) return toast.error("Informe o telefone e a mensagem.");
     setSending(true);
     try {
-      const result = await sendWhatsAppMessage(channelId, { to: to.trim(), message: message.trim() });
+      const result = await sendWhatsAppMessage(channelId, {
+        to: to.trim(),
+        message: message.trim(),
+      });
       if (!result.ok) throw new Error("A API não confirmou o envio.");
       toast.success("Mensagem enviada pela Meta.");
       onOpenChange(false);
-    } catch (error) { toast.error(formatWhatsAppApiError(error)); }
-    finally { setSending(false); }
+    } catch (error) {
+      toast.error(formatWhatsAppApiError(error));
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Enviar teste real</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>Enviar teste real</DialogTitle>
+        </DialogHeader>
         <div className="space-y-3">
-          <Field label="Destino com DDI + DDD"><Input value={to} onChange={(e) => setTo(e.target.value)} placeholder="5521999999999" /></Field>
-          <Field label="Mensagem"><Input value={message} onChange={(e) => setMessage(e.target.value)} /></Field>
+          <Field label="Destino com DDI + DDD">
+            <Input value={to} onChange={(e) => setTo(e.target.value)} placeholder="5521999999999" />
+          </Field>
+          <Field label="Mensagem">
+            <Input value={message} onChange={(e) => setMessage(e.target.value)} />
+          </Field>
         </div>
-        <DialogFooter><Button onClick={send} disabled={sending}>{sending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Enviar</Button></DialogFooter>
+        <DialogFooter>
+          <Button onClick={send} disabled={sending}>
+            {sending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Enviar
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-function ToggleRow({ title, description, checked, disabled, onCheckedChange }: { title: string; description: string; checked: boolean; disabled?: boolean; onCheckedChange: (checked: boolean) => void }) {
-  return <div className="flex items-center justify-between gap-4 rounded-lg border p-3"><div><div className="text-sm font-medium">{title}</div><div className="text-xs text-muted-foreground">{description}</div></div><Switch checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} /></div>;
+function ToggleRow({
+  title,
+  description,
+  checked,
+  disabled,
+  onCheckedChange,
+}: {
+  title: string;
+  description: string;
+  checked: boolean;
+  disabled?: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+      <div>
+        <div className="text-sm font-medium">{title}</div>
+        <div className="text-xs text-muted-foreground">{description}</div>
+      </div>
+      <Switch checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
+    </div>
+  );
 }
 
 function StatusBadge({ status }: { status: ChannelStatus }) {
-  const style = status === "connected" ? "bg-green-100 text-green-800" : status === "error" ? "bg-red-100 text-red-800" : status === "connecting" ? "bg-amber-100 text-amber-800" : "bg-muted text-muted-foreground";
-  const label = status === "connected" ? "Conectado" : status === "error" ? "Erro" : status === "connecting" ? "Conectando" : "Desconectado";
-  return <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${style}`}>{status === "connected" && <CheckCircle2 className="h-3 w-3" />}{label}</span>;
+  const style =
+    status === "connected"
+      ? "bg-green-100 text-green-800"
+      : status === "error"
+        ? "bg-red-100 text-red-800"
+        : status === "connecting"
+          ? "bg-amber-100 text-amber-800"
+          : "bg-muted text-muted-foreground";
+  const label =
+    status === "connected"
+      ? "Conectado"
+      : status === "error"
+        ? "Erro"
+        : status === "connecting"
+          ? "Conectando"
+          : "Desconectado";
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${style}`}
+    >
+      {status === "connected" && <CheckCircle2 className="h-3 w-3" />}
+      {label}
+    </span>
+  );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div><Label>{label}</Label><div className="mt-1">{children}</div></div>;
+  return (
+    <div>
+      <Label>{label}</Label>
+      <div className="mt-1">{children}</div>
+    </div>
+  );
 }
 
 function Info({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-lg bg-muted/50 p-3"><div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</div><div className="mt-1 text-sm font-medium">{value}</div></div>;
+  return (
+    <div className="rounded-lg bg-muted/50 p-3">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-1 text-sm font-medium">{value}</div>
+    </div>
+  );
 }
 
 function fmt(value?: string | null) {
   if (!value) return "—";
-  try { return new Date(value).toLocaleString("pt-BR"); } catch { return value; }
+  try {
+    return new Date(value).toLocaleString("pt-BR");
+  } catch {
+    return value;
+  }
 }

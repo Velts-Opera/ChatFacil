@@ -25,24 +25,11 @@ function normalizeOrigin(value) {
   }
 }
 
-export function createWhatsappApp({
-  gateway,
-  sessionManager,
-  allowedOrigins,
-  logger,
-}) {
-  const origins = [
-    ...new Set(
-      (allowedOrigins ?? [])
-        .map(normalizeOrigin)
-        .filter(Boolean),
-    ),
-  ];
+export function createWhatsappApp({ gateway, sessionManager, allowedOrigins, logger }) {
+  const origins = [...new Set((allowedOrigins ?? []).map(normalizeOrigin).filter(Boolean))];
 
   if (origins.length === 0) {
-    throw new Error(
-      "ALLOWED_ORIGINS deve conter ao menos um domínio permitido.",
-    );
+    throw new Error("ALLOWED_ORIGINS deve conter ao menos um domínio permitido.");
   }
 
   const app = express();
@@ -51,8 +38,7 @@ export function createWhatsappApp({
 
   app.use((req, res, next) => {
     const requestOrigin = normalizeOrigin(req.headers.origin);
-    const isAllowedOrigin =
-      requestOrigin !== null && origins.includes(requestOrigin);
+    const isAllowedOrigin = requestOrigin !== null && origins.includes(requestOrigin);
 
     if (req.method === "OPTIONS") {
       if (isAllowedOrigin) {
@@ -102,10 +88,7 @@ export function createWhatsappApp({
     try {
       const token = bearerToken(req.headers.authorization);
 
-      req.whatsappAuth = await gateway.authorizeChannel(
-        token,
-        req.params.channelId,
-      );
+      req.whatsappAuth = await gateway.authorizeChannel(token, req.params.channelId);
 
       return next();
     } catch (error) {
@@ -117,9 +100,7 @@ export function createWhatsappApp({
     try {
       requireQrChannel(req.whatsappAuth.channel);
 
-      const state = await sessionManager.connect(
-        req.params.channelId,
-      );
+      const state = await sessionManager.connect(req.params.channelId);
 
       return res.json({
         ok: true,
@@ -148,13 +129,24 @@ export function createWhatsappApp({
     }
   });
 
+  router.post("/pair", async (req, res, next) => {
+    try {
+      requireQrChannel(req.whatsappAuth.channel);
+      const state = await sessionManager.requestPairingCode(
+        req.params.channelId,
+        req.body?.phone_number,
+      );
+      return res.json({ ok: true, ...state });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
   router.get("/qr", (req, res, next) => {
     try {
       requireQrChannel(req.whatsappAuth.channel);
 
-      const qrState = sessionManager.getQr(
-        req.params.channelId,
-      );
+      const qrState = sessionManager.getQr(req.params.channelId);
 
       return res.json(qrState);
     } catch (error) {
@@ -166,12 +158,9 @@ export function createWhatsappApp({
     try {
       requireQrChannel(req.whatsappAuth.channel);
 
-      await sessionManager.disconnect(
-        req.params.channelId,
-        {
-          clearAuth: true,
-        },
-      );
+      await sessionManager.disconnect(req.params.channelId, {
+        clearAuth: true,
+      });
 
       return res.json({
         ok: true,
@@ -184,22 +173,12 @@ export function createWhatsappApp({
 
   router.post("/send", async (req, res, next) => {
     try {
-      const {
-        channel,
-        companyId,
-        token,
-      } = req.whatsappAuth;
+      const { channel, companyId, token } = req.whatsappAuth;
 
-      const message = String(
-        req.body?.message ?? "",
-      ).trim();
+      const message = String(req.body?.message ?? "").trim();
 
       if (!message) {
-        throw new ApiError(
-          400,
-          "MESSAGE_REQUIRED",
-          "message é obrigatória.",
-        );
+        throw new ApiError(400, "MESSAGE_REQUIRED", "message é obrigatória.");
       }
 
       if (message.length > 4096) {
@@ -211,64 +190,46 @@ export function createWhatsappApp({
       }
 
       if (channel.provider !== "qr_code") {
-        const result = await gateway.sendMetaMessage(
-          token,
-          {
-            channel_id: channel.id,
-            to: req.body?.to,
-            conversation_id:
-              req.body?.conversation_id,
-            message,
-          },
-        );
+        const result = await gateway.sendMetaMessage(token, {
+          channel_id: channel.id,
+          to: req.body?.to,
+          conversation_id: req.body?.conversation_id,
+          message,
+        });
 
         return res.json(result);
       }
 
-      const destination =
-        await gateway.resolveDestination({
-          companyId,
-          channelId: channel.id,
-          to: req.body?.to,
-          conversationId:
-            req.body?.conversation_id,
-        });
+      const destination = await gateway.resolveDestination({
+        companyId,
+        channelId: channel.id,
+        to: req.body?.to,
+        conversationId: req.body?.conversation_id,
+      });
 
-      const sent = await sessionManager.send(
-        channel.id,
-        destination.to,
+      const sent = await sessionManager.send(channel.id, destination.to, message);
+
+      const providerMessageId = sent?.key?.id ?? null;
+
+      const persisted = await gateway.recordQrOutbound({
+        channel,
+        destination,
         message,
-      );
-
-      const providerMessageId =
-        sent?.key?.id ?? null;
-
-      const persisted =
-        await gateway.recordQrOutbound({
-          channel,
-          destination,
-          message,
-          providerMessageId,
-        });
+        providerMessageId,
+      });
 
       return res.json({
         ok: true,
-        conversation_id:
-          persisted.conversationId,
-        message_id:
-          persisted.messageId,
-        provider_message_id:
-          providerMessageId,
+        conversation_id: persisted.conversationId,
+        message_id: persisted.messageId,
+        provider_message_id: providerMessageId,
       });
     } catch (error) {
       return next(error);
     }
   });
 
-  app.use(
-    "/api/whatsapp/channels/:channelId",
-    router,
-  );
+  app.use("/api/whatsapp/channels/:channelId", router);
 
   app.use((_req, res) => {
     return res.status(404).json({
@@ -293,9 +254,7 @@ export function createWhatsappApp({
       );
     }
 
-    return res
-      .status(payload.status)
-      .json(payload.body);
+    return res.status(payload.status).json(payload.body);
   });
 
   return app;

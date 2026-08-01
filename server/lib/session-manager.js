@@ -21,6 +21,7 @@ export class SessionManager {
     logger,
     reconnectDelayMs = 5000,
     sendDelayMs = 1200,
+    qrTtlMs = 120_000,
   }) {
     this.dataPath = path.resolve(dataPath);
     this.connectionFactory = connectionFactory;
@@ -30,6 +31,7 @@ export class SessionManager {
     this.logger = logger;
     this.reconnectDelayMs = reconnectDelayMs;
     this.sendDelayMs = sendDelayMs;
+    this.qrTtlMs = qrTtlMs;
     this.sessions = new Map();
     fs.mkdirSync(this.dataPath, { recursive: true });
   }
@@ -47,6 +49,8 @@ export class SessionManager {
     return {
       status: session?.status ?? "disconnected",
       qr: session?.qr ?? null,
+      pairingCode: session?.pairingCode ?? null,
+      qrExpiresAt: session?.qrExpiresAt ?? null,
       phoneNumber: session?.phoneNumber ?? null,
     };
   }
@@ -76,6 +80,9 @@ export class SessionManager {
       channelId,
       status: "connecting",
       qr: null,
+      pairingCode: null,
+      qrExpiresAt: null,
+      qrTimer: null,
       phoneNumber: null,
       connection: null,
       stopped: false,
@@ -94,12 +101,20 @@ export class SessionManager {
           if (session.stopped || this.sessions.get(channelId) !== session) return;
           session.qr = await this.qrEncoder(rawQr);
           session.status = "qr_pending";
+          session.qrExpiresAt = Date.now() + this.qrTtlMs;
+          // O Baileys rotaciona o QR: cada novo QR renova o prazo total de pareamento
+          if (session.qrTimer) clearTimeout(session.qrTimer);
+          session.qrTimer = setTimeout(() => this.expireQr(session), this.qrTtlMs);
+          session.qrTimer.unref?.();
           await this.emitState(channelId, { status: "qr_pending", last_error: null });
         },
         onOpen: async (phoneNumber) => {
           if (session.stopped || this.sessions.get(channelId) !== session) return;
           session.status = "connected";
           session.qr = null;
+          session.pairingCode = null;
+          session.qrExpiresAt = null;
+          if (session.qrTimer) clearTimeout(session.qrTimer);
           session.phoneNumber = phoneNumber || null;
           await this.emitState(channelId, {
             status: "connected",
@@ -188,6 +203,46 @@ export class SessionManager {
     return this.snapshot(channelId);
   }
 
+  async expireQr(session) {
+    if (session.stopped || this.sessions.get(session.channelId) !== session) return;
+    if (session.status !== "qr_pending") return;
+    // Mantém a sessão em memória com status "expired" para a UI ler o motivo;
+    // um novo connect() a substitui normalmente.
+    session.stopped = true;
+    session.status = "expired";
+    session.qr = null;
+    session.pairingCode = null;
+    session.qrExpiresAt = null;
+    try {
+      session.connection?.close();
+    } catch {}
+    await this.emitState(session.channelId, {
+      status: "expired",
+      last_error: "O QR Code expirou. Gere um novo para conectar.",
+    });
+  }
+
+  async requestPairingCode(channelId, phoneNumber) {
+    const session = this.sessions.get(channelId);
+    if (!session || !session.connection || !["connecting", "qr_pending"].includes(session.status)) {
+      throw new ApiError(
+        409,
+        "SESSION_NOT_PAIRABLE",
+        "Inicie a conexão antes de solicitar o código de pareamento.",
+      );
+    }
+    const digits = String(phoneNumber ?? "").replace(/\D/g, "");
+    if (digits.length < 10 || digits.length > 15) {
+      throw new ApiError(
+        400,
+        "INVALID_PHONE_NUMBER",
+        "Informe o número com DDI e DDD, apenas dígitos (ex: 5522999998888).",
+      );
+    }
+    session.pairingCode = await session.connection.requestPairingCode(digits);
+    return this.snapshot(channelId);
+  }
+
   async send(channelId, to, message) {
     const session = this.sessions.get(channelId);
     if (!session || session.status !== "connected" || !session.connection) {
@@ -222,6 +277,7 @@ export class SessionManager {
     if (session) {
       session.stopped = true;
       if (session.reconnectTimer) clearTimeout(session.reconnectTimer);
+      if (session.qrTimer) clearTimeout(session.qrTimer);
       this.sessions.delete(channelId);
       try {
         session.connection?.close();

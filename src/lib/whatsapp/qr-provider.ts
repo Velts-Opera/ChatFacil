@@ -1,10 +1,9 @@
 import { whatsappApi } from "./api-client";
-import type { ConnectionStatus, WhatsAppProvider } from "./provider";
-
-type QrState = { status: ConnectionStatus; qr: string | null; phoneNumber: string | null };
+import type { ConnectionStatus, QrState, WhatsAppProvider } from "./provider";
 
 export interface QrProvider extends WhatsAppProvider {
   getQrCode(): Promise<QrState>;
+  requestPairingCode(phoneNumber: string): Promise<string | null>;
   checkHealth(): Promise<boolean>;
 }
 
@@ -25,8 +24,15 @@ export class RailwayQrProvider implements QrProvider {
     return {
       status: data.status as ConnectionStatus,
       qr: data.qr ?? null,
+      pairingCode: data.pairingCode ?? null,
+      qrExpiresAt: data.qrExpiresAt ?? null,
       phoneNumber: data.phoneNumber ?? null,
     };
+  }
+
+  async requestPairingCode(phoneNumber: string): Promise<string | null> {
+    const data = await whatsappApi.pair(this.channelId, phoneNumber);
+    return data.pairingCode ?? null;
   }
 
   async getConnectionStatus(): Promise<ConnectionStatus> {
