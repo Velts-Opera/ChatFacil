@@ -8,6 +8,7 @@ verify_jwt = false
 
 [functions.whatsapp-send-message]
 verify_jwt = false
+
 [functions.whatsapp-sync-templates]
 verify_jwt = false
 
@@ -21,4 +22,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.whatsapp-embedded-signup]
+verify_jwt = false
+
+[functions.business-automation-worker]
 verify_jwt = false
