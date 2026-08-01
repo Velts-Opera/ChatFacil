@@ -45,10 +45,14 @@ function loadFacebookSdk(meta: MetaConfig) {
   if (facebookSdkPromise) return facebookSdkPromise;
 
   facebookSdkPromise = new Promise<FacebookSdk>((resolve, reject) => {
-    const timeout = window.setTimeout(() => reject(new Error("A Meta não carregou o SDK de autorização.")), 15_000);
+    const timeout = window.setTimeout(() => {
+      facebookSdkPromise = null;
+      reject(new Error("A Meta não carregou o SDK de autorização. Verifique a conexão e tente novamente."));
+    }, 15_000);
     window.fbAsyncInit = () => {
       if (!window.FB) {
         window.clearTimeout(timeout);
+        facebookSdkPromise = null;
         reject(new Error("SDK da Meta indisponível."));
         return;
       }
@@ -135,8 +139,20 @@ export function MetaEmbeddedSignup({ token, onComplete }: {
       if (finished) {
         const wabaId = payload.data?.waba_id;
         const phoneNumberId = payload.data?.phone_number_id;
-        if (wabaId && phoneNumberId) setSessionInfo({ wabaId, phoneNumberId });
+        if (!wabaId || !phoneNumberId) {
+          setLoading(false);
+          setStatus("error");
+          setError("A Meta concluiu o fluxo, mas não devolveu os identificadores do WhatsApp. Tente novamente.");
+          return;
+        }
+        setSessionInfo({ wabaId, phoneNumberId });
+      } else if (payload.event === "CANCEL") {
+        setLoading(false);
+        setStatus("pending");
+        const currentStep = payload.data?.current_step;
+        setError(`Conexão cancelada antes da conclusão${currentStep ? ` (etapa: ${currentStep})` : ""}. Toque em Conectar WhatsApp para tentar novamente.`);
       } else if (payload.event === "ERROR") {
+        setLoading(false);
         setStatus("error");
         setError(payload.data?.error_message || "A Meta não concluiu o onboarding.");
       }
@@ -168,6 +184,10 @@ export function MetaEmbeddedSignup({ token, onComplete }: {
 
   async function launch() {
     if (!meta) return;
+    completionStarted.current = false;
+    setAuthCode(null);
+    setSessionInfo(null);
+    setStatus("authorizing");
     setLoading(true);
     setError(null);
     try {
@@ -176,13 +196,17 @@ export function MetaEmbeddedSignup({ token, onComplete }: {
         const code = response.authResponse?.code;
         if (!code) {
           setLoading(false);
-          if (response.status !== "connected") setError("Autorização cancelada ou não concluída.");
+          setStatus("pending");
+          setError(response.status === "connected"
+            ? "A Meta autorizou a conta, mas não devolveu o código de conexão. Tente novamente."
+            : "Autorização cancelada ou não concluída. Tente novamente.");
           return;
         }
         setAuthCode(code);
         setLoading(false);
       }, {
         config_id: meta.configuration_id,
+        auth_type: "rerequest",
         response_type: "code",
         override_default_response_type: true,
         extras: {
