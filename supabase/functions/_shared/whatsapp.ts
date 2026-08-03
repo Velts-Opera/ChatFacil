@@ -14,7 +14,7 @@ export async function metaGet(path: string, accessToken: string) {
   return { ok: res.ok, status: res.status, json };
 }
 
-export async function sendWhatsAppText(accessToken: string, phoneNumberId: string, to: string, message: string) {
+export async function sendWhatsAppText(accessToken: string, phoneNumberId: string, to: string, message: string, signal?: AbortSignal) {
   const res = await fetch(`${graphBase()}/${encodeURIComponent(phoneNumberId)}/messages`, {
     method: "POST",
     headers: {
@@ -28,6 +28,7 @@ export async function sendWhatsAppText(accessToken: string, phoneNumberId: strin
       type: "text",
       text: { preview_url: false, body: message },
     }),
+    signal,
   });
   const json = await res.json().catch(() => ({}));
   return { ok: res.ok, status: res.status, json };
