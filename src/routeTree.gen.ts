@@ -15,6 +15,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as OnboardingTokenRouteImport } from './routes/onboarding.$token'
 import { Route as AuthenticatedRespostasRapidasRouteImport } from './routes/_authenticated/respostas-rapidas'
+import { Route as AuthenticatedOnboardingInicialRouteImport } from './routes/_authenticated/onboarding-inicial'
 import { Route as AuthenticatedInboxRouteImport } from './routes/_authenticated/inbox'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedContatosRouteImport } from './routes/_authenticated/contatos'
@@ -52,6 +53,12 @@ const AuthenticatedRespostasRapidasRoute =
   AuthenticatedRespostasRapidasRouteImport.update({
     id: '/respostas-rapidas',
     path: '/respostas-rapidas',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedOnboardingInicialRoute =
+  AuthenticatedOnboardingInicialRouteImport.update({
+    id: '/onboarding-inicial',
+    path: '/onboarding-inicial',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedInboxRoute = AuthenticatedInboxRouteImport.update({
@@ -108,6 +115,7 @@ export interface FileRoutesByFullPath {
   '/contatos': typeof AuthenticatedContatosRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/inbox': typeof AuthenticatedInboxRoute
+  '/onboarding-inicial': typeof AuthenticatedOnboardingInicialRoute
   '/respostas-rapidas': typeof AuthenticatedRespostasRapidasRoute
   '/onboarding/$token': typeof OnboardingTokenRoute
 }
@@ -123,6 +131,7 @@ export interface FileRoutesByTo {
   '/contatos': typeof AuthenticatedContatosRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/inbox': typeof AuthenticatedInboxRoute
+  '/onboarding-inicial': typeof AuthenticatedOnboardingInicialRoute
   '/respostas-rapidas': typeof AuthenticatedRespostasRapidasRoute
   '/onboarding/$token': typeof OnboardingTokenRoute
 }
@@ -140,6 +149,7 @@ export interface FileRoutesById {
   '/_authenticated/contatos': typeof AuthenticatedContatosRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/inbox': typeof AuthenticatedInboxRoute
+  '/_authenticated/onboarding-inicial': typeof AuthenticatedOnboardingInicialRoute
   '/_authenticated/respostas-rapidas': typeof AuthenticatedRespostasRapidasRoute
   '/onboarding/$token': typeof OnboardingTokenRoute
 }
@@ -157,6 +167,7 @@ export interface FileRouteTypes {
     | '/contatos'
     | '/dashboard'
     | '/inbox'
+    | '/onboarding-inicial'
     | '/respostas-rapidas'
     | '/onboarding/$token'
   fileRoutesByTo: FileRoutesByTo
@@ -172,6 +183,7 @@ export interface FileRouteTypes {
     | '/contatos'
     | '/dashboard'
     | '/inbox'
+    | '/onboarding-inicial'
     | '/respostas-rapidas'
     | '/onboarding/$token'
   id:
@@ -188,6 +200,7 @@ export interface FileRouteTypes {
     | '/_authenticated/contatos'
     | '/_authenticated/dashboard'
     | '/_authenticated/inbox'
+    | '/_authenticated/onboarding-inicial'
     | '/_authenticated/respostas-rapidas'
     | '/onboarding/$token'
   fileRoutesById: FileRoutesById
@@ -242,6 +255,13 @@ declare module '@tanstack/react-router' {
       path: '/respostas-rapidas'
       fullPath: '/respostas-rapidas'
       preLoaderRoute: typeof AuthenticatedRespostasRapidasRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/onboarding-inicial': {
+      id: '/_authenticated/onboarding-inicial'
+      path: '/onboarding-inicial'
+      fullPath: '/onboarding-inicial'
+      preLoaderRoute: typeof AuthenticatedOnboardingInicialRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/inbox': {
@@ -312,6 +332,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedContatosRoute: typeof AuthenticatedContatosRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedInboxRoute: typeof AuthenticatedInboxRoute
+  AuthenticatedOnboardingInicialRoute: typeof AuthenticatedOnboardingInicialRoute
   AuthenticatedRespostasRapidasRoute: typeof AuthenticatedRespostasRapidasRoute
 }
 
@@ -324,6 +345,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedContatosRoute: AuthenticatedContatosRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedInboxRoute: AuthenticatedInboxRoute,
+  AuthenticatedOnboardingInicialRoute: AuthenticatedOnboardingInicialRoute,
   AuthenticatedRespostasRapidasRoute: AuthenticatedRespostasRapidasRoute,
 }
 

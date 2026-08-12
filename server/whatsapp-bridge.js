@@ -23,7 +23,11 @@ const gateway = createSupabaseGateway({
 const tenantAgent = createTenantAgent({
   supabaseUrl: process.env.SUPABASE_URL,
   serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-  geminiApiKey: required("GEMINI_API_KEY"),
+  aiApiKey: process.env.AI_API_KEY ?? process.env.OPENAI_API_KEY,
+  aiProvider: process.env.AI_PROVIDER,
+  aiBaseUrl: process.env.AI_BASE_URL,
+  geminiApiKey: process.env.GEMINI_API_KEY,
+  model: process.env.AI_MODEL ?? process.env.GEMINI_MODEL,
   logger,
 });
 const sessionManager = new SessionManager({
