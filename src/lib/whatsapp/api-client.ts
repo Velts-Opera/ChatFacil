@@ -4,6 +4,9 @@ type ApiErrorBody = {
   error?: string | { code?: string; message?: string };
 };
 
+const LOCAL_WHATSAPP_API_URL = "https://veltsapp.tail1df6a.ts.net";
+const RETIRED_RAILWAY_API_URL = "https://chatfacil-production.up.railway.app";
+
 export class WhatsAppApiError extends Error {
   constructor(
     public status: number,
@@ -16,15 +19,17 @@ export class WhatsAppApiError extends Error {
 }
 
 function apiBaseUrl() {
-  const value = (import.meta.env.VITE_WA_API_URL as string | undefined)?.trim().replace(/\/$/, "");
-  if (!value) {
-    throw new WhatsAppApiError(
-      500,
-      "WA_API_URL_MISSING",
-      "VITE_WA_API_URL não está configurada no Vercel.",
-    );
+  const configured = (import.meta.env.VITE_WA_API_URL as string | undefined)
+    ?.trim()
+    .replace(/\/$/, "");
+
+  // Mantém o painel operacional durante a migração do Railway para o bridge
+  // gratuito hospedado no computador do proprietário via Tailscale Funnel.
+  if (!configured || configured === RETIRED_RAILWAY_API_URL) {
+    return LOCAL_WHATSAPP_API_URL;
   }
-  return value;
+
+  return configured;
 }
 
 async function currentAccessToken() {
