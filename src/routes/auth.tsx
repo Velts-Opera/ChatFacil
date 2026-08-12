@@ -199,7 +199,7 @@ function SignupForm() {
       email: normalizeEmail(form.email),
       password: form.password,
       options: {
-        emailRedirectTo: getAuthRedirectTo(),
+        emailRedirectTo: getAuthRedirectTo("/onboarding-inicial"),
         data: {
           company_name: form.company_name.trim(),
           segment: form.segment.trim(),
@@ -215,21 +215,21 @@ function SignupForm() {
     if (error) return toast.error(getSupabaseAuthMessage(error.message));
 
     if (data.session) {
-      toast.success("Conta criada!");
-      navigate({ to: "/dashboard" });
+      toast.success("Conta criada! Vamos conectar seu WhatsApp.");
+      navigate({ to: "/onboarding-inicial" });
       return;
     }
 
-    toast.success("Conta criada! Verifique seu e-mail para ativar o acesso.");
+    toast.success("Conta criada! Verifique seu e-mail para ativar o acesso e continuar a conexão do WhatsApp.");
   }
 
   async function onGoogle() {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: getAuthRedirectTo("/dashboard") },
+      options: { redirectTo: getAuthRedirectTo("/onboarding-inicial") },
     });
     if (error) toast.error(getSupabaseAuthMessage(error.message));
-    else if (!data.url) navigate({ to: "/dashboard" });
+    else if (!data.url) navigate({ to: "/onboarding-inicial" });
   }
 
   return (
