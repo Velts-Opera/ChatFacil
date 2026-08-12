@@ -10,10 +10,18 @@ Configure manualmente:
 SUPABASE_URL=https://SEU_PROJETO.supabase.co
 SUPABASE_ANON_KEY=SUA_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY=SUA_SERVICE_ROLE_KEY
-GEMINI_API_KEY=SUA_GEMINI_API_KEY
+AI_PROVIDER=alibaba
+AI_API_KEY=SUA_CHAVE_DE_IA
+AI_BASE_URL=https://SEU_ENDPOINT_COMPATIVEL/compatible-mode/v1
+AI_MODEL=qwen-plus
 ALLOWED_ORIGINS=https://SEU_FRONTEND.vercel.app
 SESSION_DATA_PATH=/data
 ```
+
+O agente QR aceita qualquer API compatível com OpenAI. Para usar Gemini em vez disso,
+remova as variáveis `AI_*` e configure `GEMINI_API_KEY` e `GEMINI_MODEL`.
+Sem chave de IA, o WhatsApp continua conectando e persistindo mensagens, mas transfere
+a conversa para atendimento humano em vez de responder automaticamente.
 
 `PORT` é injetada automaticamente pelo Railway. Não crie variáveis de segredo compartilhado para o fluxo QR.
 
@@ -30,7 +38,7 @@ VITE_WA_API_URL=https://SEU_SERVICO.up.railway.app
 Não coloque no Vercel nem em qualquer variável `VITE_*`:
 
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `GEMINI_API_KEY`
+- `AI_API_KEY` ou `GEMINI_API_KEY`
 
 ## Banco
 

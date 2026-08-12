@@ -15,8 +15,10 @@ test("tenant agent stays disabled until Supabase server access is configured", (
     persistenceEnabled: false,
     aiEnabled: false,
     hasSupabaseKey: false,
+    hasAiKey: false,
     hasGeminiKey: false,
-    model: "gemini-1.5-flash",
+    provider: "none",
+    model: "gpt-4o-mini",
   });
 });
 
@@ -131,7 +133,9 @@ test("tenant agent reports direct mode readiness without exposing secrets", () =
     persistenceEnabled: true,
     aiEnabled: true,
     hasSupabaseKey: true,
+    hasAiKey: false,
     hasGeminiKey: true,
+    provider: "gemini",
     model: "gemini-1.5-flash",
   });
 });
@@ -228,13 +232,129 @@ test("tenant agent persists inbound data and hands off when the AI key is absent
   assert.match(handoff.search, /company_id=eq\.company-a/);
   assert.equal(handoff.body.status, "pendente");
   assert.equal(handoff.body.ai_handling, false);
-  assert.equal(handoff.body.handoff_reason, "GEMINI_API_KEY ausente");
+  assert.equal(handoff.body.handoff_reason, "AI_API_KEY ausente");
 
   const interaction = calls.find(
     (call) => call.method === "POST" && call.table === "ai_interactions",
   );
   assert.equal(interaction.body.company_id, "company-a");
   assert.equal(interaction.body.status, "error");
+});
+
+test("tenant agent uses the configured OpenAI-compatible provider for the correct company", async () => {
+  const calls = [];
+  const fetchImpl = async (input, init = {}) => {
+    const url = new URL(input);
+    const method = init.method ?? "GET";
+    const body = init.body ? JSON.parse(init.body) : null;
+
+    if (url.hostname === "dashscope.example.com") {
+      calls.push({ method, url: url.href, body, headers: init.headers });
+      return jsonResponse({ choices: [{ message: { content: "Olá Maria, vamos agendar." } }] });
+    }
+
+    const table = url.pathname.split("/rest/v1/")[1];
+    calls.push({ method, table, search: url.search, body, headers: init.headers });
+
+    if (method === "GET" && table === "channels") {
+      return jsonResponse([
+        {
+          id: "channel-a",
+          company_id: "company-a",
+          provider: "qr_code",
+          ai_enabled: true,
+          auto_reply_enabled: true,
+          human_handoff_enabled: true,
+          handoff_when_unknown: true,
+        },
+      ]);
+    }
+    if (method === "GET" && table === "companies") {
+      return jsonResponse([
+        {
+          name: "Clínica A",
+          communication_tone: "profissional",
+          services_description: "Consultas particulares",
+        },
+      ]);
+    }
+    if (method === "GET" && table === "ai_agent_settings") {
+      return jsonResponse([
+        {
+          id: "agent-a",
+          company_id: "company-a",
+          is_enabled: true,
+          agent_name: "Bia",
+          system_prompt: "Nunca use dados de outra empresa.",
+        },
+      ]);
+    }
+    if (method === "GET" && table === "ai_knowledge_items") {
+      return jsonResponse([{ title: "Agenda", content: "Atendimento de segunda a sexta." }]);
+    }
+    if (method === "GET" && table === "quick_replies") return jsonResponse([]);
+    if (method === "GET" && table === "messages") return jsonResponse([]);
+    if (method === "GET" && table === "contacts") return jsonResponse([]);
+    if (method === "POST" && table === "contacts") {
+      return jsonResponse([{ id: "contact-a" }]);
+    }
+    if (method === "GET" && table === "conversations") return jsonResponse([]);
+    if (method === "POST" && table === "conversations") {
+      return jsonResponse([{ id: "conversation-a", ai_handling: true }]);
+    }
+    if (method === "POST" && table === "messages") {
+      return jsonResponse([
+        { id: body.direction === "inbound" ? "message-in-a" : "message-out-a" },
+      ]);
+    }
+    if (method === "PATCH" && table === "conversations") return jsonResponse(null);
+    if (method === "POST" && table === "ai_interactions") return jsonResponse(null);
+
+    throw new Error(`Unexpected request: ${method} ${url}`);
+  };
+
+  const agent = createTenantAgent({
+    supabaseUrl: "https://example.supabase.co",
+    serviceRoleKey: "sb_secret_placeholder",
+    aiProvider: "alibaba",
+    aiApiKey: "alibaba-placeholder",
+    aiBaseUrl: "https://dashscope.example.com/compatible-mode/v1/",
+    model: "qwen-plus",
+    fetchImpl,
+  });
+
+  const result = await agent.processMessage({
+    channelId: "channel-a",
+    waId: "5522999999999",
+    rawJid: "5522999999999@s.whatsapp.net",
+    pushName: "Maria",
+    content: "Quero agendar",
+    messageId: "wa-message-a",
+    timestamp: "2026-07-15T12:00:00.000Z",
+  });
+
+  assert.deepEqual(result, {
+    to: "5522999999999@s.whatsapp.net",
+    reply: "Olá Maria, vamos agendar.",
+  });
+  assert.equal(agent.describe().provider, "alibaba");
+  assert.equal(agent.describe().model, "qwen-plus");
+
+  const aiCall = calls.find((call) => call.url?.includes("/chat/completions"));
+  assert.equal(aiCall.url, "https://dashscope.example.com/compatible-mode/v1/chat/completions");
+  assert.equal(aiCall.headers.Authorization, "Bearer alibaba-placeholder");
+  assert.equal(aiCall.body.model, "qwen-plus");
+  assert.match(aiCall.body.messages[0].content, /Clínica A/);
+  assert.match(aiCall.body.messages[0].content, /Nunca use dados de outra empresa/);
+  assert.doesNotMatch(aiCall.body.messages[0].content, /Empresa B/);
+
+  const outbound = calls.find(
+    (call) =>
+      call.method === "POST" && call.table === "messages" && call.body.direction === "outbound",
+  );
+  assert.equal(outbound.body.company_id, "company-a");
+  assert.equal(outbound.body.agent_id, "agent-a");
+  assert.equal(outbound.body.content, "Olá Maria, vamos agendar.");
 });
 
 function jsonResponse(value) {

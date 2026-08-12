@@ -1,7 +1,9 @@
 import { greetingForSaoPaulo } from "./greeting-clock.js";
 import { createConversationLock } from "./conversation-lock.js";
 
-const DEFAULT_MODEL = "gemini-1.5-flash";
+const DEFAULT_GEMINI_MODEL = "gemini-1.5-flash";
+const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+const DEFAULT_ALIBABA_MODEL = "qwen-plus";
 
 function cleanPhone(value) {
   return String(value ?? "").replace(/\D/g, "");
@@ -14,14 +16,37 @@ function encode(value) {
 export function createTenantAgent({
   supabaseUrl,
   serviceRoleKey,
+  aiApiKey,
+  aiProvider,
+  aiBaseUrl = "https://api.openai.com/v1",
   geminiApiKey,
-  model = DEFAULT_MODEL,
+  model,
   logger,
   fetchImpl = globalThis.fetch,
 }) {
   const baseUrl = String(supabaseUrl ?? "").replace(/\/$/, "");
   const enabled = Boolean(baseUrl && serviceRoleKey);
-  const aiEnabled = Boolean(geminiApiKey);
+  const compatibleApiKey = String(aiApiKey ?? "").trim();
+  const legacyGeminiApiKey = String(geminiApiKey ?? "").trim();
+  const provider = compatibleApiKey
+    ? String(aiProvider ?? "openai")
+        .trim()
+        .toLowerCase()
+    : legacyGeminiApiKey
+      ? "gemini"
+      : String(aiProvider ?? "none")
+          .trim()
+          .toLowerCase();
+  const resolvedModel = String(
+    model ??
+      (provider === "gemini"
+        ? DEFAULT_GEMINI_MODEL
+        : provider === "alibaba"
+          ? DEFAULT_ALIBABA_MODEL
+          : DEFAULT_OPENAI_MODEL),
+  ).trim();
+  const compatibleBaseUrl = String(aiBaseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
+  const aiEnabled = Boolean(compatibleApiKey || legacyGeminiApiKey);
   const conversationLock = createConversationLock();
 
   if (typeof fetchImpl !== "function") {
@@ -236,25 +261,42 @@ export function createTenantAgent({
   }
 
   async function generateReply(channel, conversationId, content, agent) {
-    if (!geminiApiKey) return null;
+    if (!aiEnabled) return null;
     const prompt = await buildAgentPrompt(channel, conversationId, content, agent);
-    const response = await fetchImpl(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(geminiApiKey)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: Number(agent?.temperature ?? 0.4),
-            maxOutputTokens: Number(agent?.max_tokens ?? 400),
-          },
-        }),
-      },
-    );
+    const response =
+      provider === "gemini"
+        ? await fetchImpl(
+            `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(resolvedModel)}:generateContent?key=${encodeURIComponent(legacyGeminiApiKey)}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                contents: [{ role: "user", parts: [{ text: prompt }] }],
+                generationConfig: {
+                  temperature: Number(agent?.temperature ?? 0.4),
+                  maxOutputTokens: Number(agent?.max_tokens ?? 400),
+                },
+              }),
+            },
+          )
+        : await fetchImpl(`${compatibleBaseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${compatibleApiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: resolvedModel,
+              messages: [{ role: "user", content: prompt }],
+              temperature: Number(agent?.temperature ?? 0.4),
+              max_tokens: Number(agent?.max_tokens ?? 400),
+            }),
+          });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(`Gemini ${response.status}: ${JSON.stringify(body)}`);
-    return body?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
+    if (!response.ok) throw new Error(`${provider} ${response.status}: ${JSON.stringify(body)}`);
+    return provider === "gemini"
+      ? body?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null
+      : body?.choices?.[0]?.message?.content?.trim() || null;
   }
 
   async function saveAiInteraction(channel, conversationId, agentId, values) {
@@ -266,7 +308,7 @@ export function createTenantAgent({
         channel_id: channel.id,
         agent_id: agentId ?? null,
         conversation_id: conversationId,
-        model,
+        model: resolvedModel,
         ...values,
       }),
     });
@@ -335,13 +377,13 @@ export function createTenantAgent({
     )
       return null;
 
-    if (!geminiApiKey) {
-      await handoffConversation(channel, conversationId, "GEMINI_API_KEY ausente");
+    if (!aiEnabled) {
+      await handoffConversation(channel, conversationId, "AI_API_KEY ausente");
       await saveAiInteraction(channel, conversationId, agent?.id, {
         inbound_message_id: inbound?.id ?? null,
         status: "error",
         input: content,
-        error_message: "GEMINI_API_KEY ausente",
+        error_message: "AI_API_KEY ausente",
       });
       return null;
     }
@@ -423,8 +465,10 @@ export function createTenantAgent({
         persistenceEnabled: enabled,
         aiEnabled,
         hasSupabaseKey: Boolean(serviceRoleKey),
-        hasGeminiKey: Boolean(geminiApiKey),
-        model,
+        hasAiKey: Boolean(compatibleApiKey),
+        hasGeminiKey: Boolean(legacyGeminiApiKey),
+        provider,
+        model: resolvedModel,
       };
     },
   };
