@@ -16,12 +16,14 @@ import {
   Bot,
   CalendarDays,
   Building2,
+  Rocket,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const nav = [
+  { to: "/onboarding-inicial", label: "Primeiros passos", icon: Rocket },
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/inbox", label: "Inbox", icon: Inbox },
   { to: "/contatos", label: "Contatos", icon: Users },
@@ -70,7 +72,6 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen w-full bg-surface">
-      {/* Sidebar */}
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-40 flex w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground transition-transform md:sticky md:top-0 md:h-screen md:translate-x-0",
@@ -149,7 +150,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setOpen(false)} />
       )}
 
-      {/* Main */}
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-border bg-background/80 px-4 py-3 backdrop-blur md:hidden">
           <button onClick={() => setOpen(true)} aria-label="Abrir menu">
