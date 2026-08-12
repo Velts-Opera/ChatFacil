@@ -14,7 +14,7 @@ function required(name) {
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? "info" });
 const port = Number.parseInt(process.env.PORT ?? "3001", 10);
-const host = "0.0.0.0";
+const host = process.env.HOST?.trim() || "0.0.0.0";
 const gateway = createSupabaseGateway({
   supabaseUrl: required("SUPABASE_URL"),
   anonKey: required("SUPABASE_ANON_KEY"),
