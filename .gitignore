@@ -30,6 +30,8 @@ supabase/.temp/
 
 # Local WhatsApp bridge auth state
 server/sessions/
+server/data/
+server/.runtime/
 
 # Local notes/vaults
 ChatFacil/
