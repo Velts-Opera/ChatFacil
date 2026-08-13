@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/reset-password")({
-  head: () => ({ meta: [{ title: "Redefinir senha — Comunica AI" }] }),
+  head: () => ({ meta: [{ title: "Redefinir senha — ChatFacil" }] }),
   component: ResetPassword,
 });
 
