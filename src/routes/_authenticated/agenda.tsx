@@ -18,7 +18,7 @@ import { Plus, Trash2, CalendarDays, Clock } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/agenda")({
-  head: () => ({ meta: [{ title: "Agenda — Comunica AI" }] }),
+  head: () => ({ meta: [{ title: "Agenda — ChatFacil" }] }),
   component: AgendaPage,
 });
 
