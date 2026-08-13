@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { WhatsAppQrConnect } from "@/components/whatsapp-qr-connect";
+import { MetaDirectOnboarding } from "@/components/meta-embedded-signup";
 import { Button } from "@/components/ui/button";
 import type { ConnectionStatus } from "@/lib/whatsapp/provider";
 import {
@@ -9,7 +9,6 @@ import {
   CheckCircle2,
   Circle,
   Loader2,
-  MessageCircle,
   RefreshCw,
   Rocket,
   TriangleAlert,
@@ -64,7 +63,8 @@ async function loadSetup(): Promise<SetupState> {
       .select("id,status,phone_number,ai_enabled,auto_reply_enabled")
       .eq("company_id", companyId)
       .eq("type", "whatsapp")
-      .eq("provider", "qr_code")
+      .eq("provider", "meta_cloud_api")
+      .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
   ]);
@@ -185,7 +185,7 @@ function InitialOnboardingPage() {
         <StepCard
           number="2"
           title="WhatsApp conectado"
-          description={whatsappConnected ? `Conectado${setup.channel?.phone_number ? ` em +${setup.channel.phone_number}` : ""}.` : "Conecte pelo QR Code ou código por número."}
+          description={whatsappConnected ? `Conectado oficialmente${setup.channel?.phone_number ? ` em ${setup.channel.phone_number}` : ""}.` : "Autorize seu número no fluxo oficial da Meta."}
           done={whatsappConnected}
         />
         <StepCard
@@ -196,38 +196,26 @@ function InitialOnboardingPage() {
         />
       </div>
 
-      {setup.channel ? (
+      {whatsappConnected ? (
         <section className="rounded-2xl border bg-card p-5 sm:p-6">
           <div className="mb-4 flex items-start gap-3">
-            <MessageCircle className="mt-0.5 h-5 w-5 text-primary" />
+            <CheckCircle2 className="mt-0.5 h-5 w-5 text-green-700" />
             <div>
-              <h2 className="font-display text-lg font-bold">Conectar meu WhatsApp</h2>
+              <h2 className="font-display text-lg font-bold">WhatsApp oficial conectado</h2>
               <p className="text-sm text-muted-foreground">
-                Esta conexão pertence somente à sua empresa. Assim que conectar, o agente configurado acima passa a processar novas mensagens.
+                O número pertence à sua empresa e foi autorizado na integração oficial do ChatFacil.
               </p>
             </div>
           </div>
-          <WhatsAppQrConnect
-            channelId={setup.channel.id}
-            initialStatus={setup.channel.status}
-            onConnected={() => {
-              queryClient.invalidateQueries({ queryKey: ["initial-onboarding"] });
-            }}
-            onDisconnected={() => {
-              queryClient.invalidateQueries({ queryKey: ["initial-onboarding"] });
-            }}
-          />
-        </section>
-      ) : (
-        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-950">
-          <div className="flex items-start gap-3">
-            <TriangleAlert className="mt-0.5 h-5 w-5" />
-            <div>
-              <div className="font-medium">Canal WhatsApp não provisionado</div>
-              <p className="mt-1 text-sm">A criação automática do canal falhou para esta empresa. Recarregue a página; se persistir, o administrador precisa reparar o provisionamento.</p>
-            </div>
+          <div className="rounded-xl border bg-muted/20 p-4 text-sm">
+            <strong>{setup.channel?.phone_number || "Número conectado"}</strong>
+            <p className="mt-1 text-muted-foreground">As mensagens recebidas pela Cloud API da Meta serão processadas pelo agente desta empresa.</p>
           </div>
         </section>
+      ) : (
+        <MetaDirectOnboarding
+          onComplete={() => queryClient.invalidateQueries({ queryKey: ["initial-onboarding"] })}
+        />
       )}
 
       {whatsappConnected && (

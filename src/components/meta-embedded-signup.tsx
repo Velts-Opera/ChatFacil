@@ -260,6 +260,80 @@ export function MetaEmbeddedSignup({ token, onComplete }: {
   );
 }
 
+export function MetaDirectOnboarding({ onComplete }: {
+  onComplete?: (channelId?: string) => void | Promise<void>;
+}) {
+  const [token, setToken] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const prepare = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await invokeEmbeddedSignup({
+        action: "create",
+        connection_mode: "coexistence",
+      });
+      setToken(data.onboarding_token);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível preparar a conexão.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    prepare();
+  }, [prepare]);
+
+  if (loading) {
+    return (
+      <section className="rounded-xl border bg-card p-5 shadow-sm">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Preparando conexão segura…
+        </div>
+      </section>
+    );
+  }
+
+  if (!token) {
+    return (
+      <section className="rounded-xl border border-red-200 bg-red-50 p-5 text-red-900">
+        <div className="flex items-start gap-2 text-sm">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="flex-1">
+            <p>{error || "Não foi possível preparar a conexão."}</p>
+            <Button variant="outline" size="sm" className="mt-3" onClick={prepare}>
+              Tentar novamente
+            </Button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-xl border bg-card p-5 shadow-sm">
+      <div className="mb-4 flex items-start gap-3">
+        <Smartphone className="mt-0.5 h-5 w-5 text-primary" />
+        <div>
+          <h2 className="font-medium">Conectar meu WhatsApp</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Informe e confirme seu número no fluxo oficial. Depois disso, o agente trabalha sem
+            depender de computador ou navegador ligado.
+          </p>
+        </div>
+      </div>
+      <MetaEmbeddedSignup token={token} onComplete={onComplete} />
+      <p className="mt-3 text-xs text-muted-foreground">
+        Requer WhatsApp Business. Se o número ainda usa o WhatsApp pessoal, converta-o primeiro no
+        aplicativo oficial.
+      </p>
+    </section>
+  );
+}
+
 export function MetaOnboardingLink({ onComplete }: { onComplete?: () => void | Promise<void> }) {
   const [creating, setCreating] = useState(false);
   const [onboardingUrl, setOnboardingUrl] = useState<string | null>(null);

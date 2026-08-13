@@ -24,11 +24,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { MetaOnboardingLink } from "@/components/meta-embedded-signup";
-import { WhatsAppQrConnect } from "@/components/whatsapp-qr-connect";
+import { MetaDirectOnboarding } from "@/components/meta-embedded-signup";
 import { useSuperAdmin } from "@/hooks/use-super-admin";
 import { formatWhatsAppApiError, sendWhatsAppMessage } from "@/lib/whatsapp/api-client";
-import type { ConnectionStatus } from "@/lib/whatsapp/provider";
 
 export const Route = createFileRoute("/_authenticated/canais")({
   head: () => ({
@@ -36,7 +34,7 @@ export const Route = createFileRoute("/_authenticated/canais")({
       { title: "Canais — ChatFacil" },
       {
         name: "description",
-        content: "Conecte o WhatsApp ao agente ChatFacil por QR Code no fluxo oficial da Meta.",
+        content: "Conecte o WhatsApp ao agente ChatFacil pelo fluxo oficial da Meta.",
       },
     ],
   }),
@@ -92,33 +90,20 @@ async function edgeFunctionErrorMessage(error: unknown, fallback: string) {
 
 function CanaisPage() {
   const { isSuperAdmin } = useSuperAdmin();
-  const [qrChannel, setQrChannel] = useState<Channel | null>(null);
   const [metaChannel, setMetaChannel] = useState<Channel | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showMetaAdvanced, setShowMetaAdvanced] = useState(false);
 
   async function loadChannels() {
     setLoading(true);
-    const [qrResult, metaResult] = await Promise.all([
-      supabase
-        .from("channel_public_view" as any)
-        .select("*")
-        .eq("type", "whatsapp")
-        .eq("provider", "qr_code")
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from("channel_public_view" as any)
-        .select("*")
-        .eq("type", "whatsapp")
-        .eq("provider", "meta_cloud_api")
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ]);
-    if (qrResult.error) toast.error(qrResult.error.message);
-    setQrChannel((qrResult.data as Channel | null) ?? null);
+    const metaResult = await supabase
+      .from("channel_public_view" as any)
+      .select("*")
+      .eq("type", "whatsapp")
+      .eq("provider", "meta_cloud_api")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (metaResult.error) toast.error(metaResult.error.message);
     setMetaChannel((metaResult.data as Channel | null) ?? null);
     setLoading(false);
   }
@@ -132,8 +117,8 @@ function CanaisPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Canais</h1>
         <p className="text-sm text-muted-foreground">
-          Conecte o WhatsApp lendo o QR Code ou usando o código de pareamento pelo número. O agente
-          da sua empresa já está pronto para atender.
+          Autorize o WhatsApp da sua empresa na integração oficial da Meta. O cliente não precisa
+          criar API, webhook ou aplicativo próprio.
         </p>
       </div>
 
@@ -144,17 +129,6 @@ function CanaisPage() {
         </div>
       ) : (
         <>
-          {qrChannel && (
-            <section className="rounded-xl border bg-card p-6 shadow-sm">
-              <WhatsAppQrConnect
-                channelId={qrChannel.id}
-                initialStatus={qrChannel.status as ConnectionStatus}
-                onConnected={() => loadChannels()}
-                onDisconnected={() => loadChannels()}
-              />
-            </section>
-          )}
-
           {metaChannel && (
             <OfficialChannel
               channel={metaChannel}
@@ -164,18 +138,7 @@ function CanaisPage() {
           )}
 
           {!metaChannel && (
-            <details
-              className="rounded-xl border bg-muted/20 p-4"
-              open={showMetaAdvanced}
-              onToggle={(e) => setShowMetaAdvanced((e.target as HTMLDetailsElement).open)}
-            >
-              <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
-                Opção avançada: conectar pela API oficial da Meta
-              </summary>
-              <div className="mt-4">
-                <MetaOnboardingLink onComplete={loadChannels} />
-              </div>
-            </details>
+            <MetaDirectOnboarding onComplete={loadChannels} />
           )}
         </>
       )}
@@ -268,7 +231,7 @@ function OfficialChannel({
       });
       if (error) throw error;
       if (!data?.ok) throw new Error(data?.error ?? "Não foi possível desconectar.");
-      toast.success("Canal desconectado. Gere um novo QR para conectar novamente.");
+      toast.success("Canal desconectado. Faça uma nova autorização oficial para reconectar.");
       await onChanged();
     } catch (error) {
       toast.error(await edgeFunctionErrorMessage(error, "Falha ao desconectar."));
@@ -387,8 +350,8 @@ function OfficialChannel({
       {channel.status === "connected" && (
         <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed p-4">
           <div className="text-sm text-muted-foreground">
-            Use a desconexão somente para remover este número. Depois disso, o QR de conexão volta a
-            aparecer para o cliente.
+            Use a desconexão somente para remover este número. Depois disso, será necessária uma
+            nova autorização oficial da Meta.
           </div>
           <Button variant="destructive" size="sm" onClick={disconnect} disabled={disconnecting}>
             {disconnecting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Desconectar
