@@ -4,7 +4,7 @@ type ApiErrorBody = {
   error?: string | { code?: string; message?: string };
 };
 
-const LOCAL_WHATSAPP_API_URL = "https://veltsapp.tail1df6a.ts.net";
+const LOCAL_WHATSAPP_API_URL = "https://api.veltsapp.com";
 const RETIRED_RAILWAY_API_URL = "https://chatfacil-production.up.railway.app";
 
 export class WhatsAppApiError extends Error {
@@ -24,7 +24,7 @@ function apiBaseUrl() {
     .replace(/\/$/, "");
 
   // Mantém o painel operacional durante a migração do Railway para o bridge
-  // gratuito hospedado no computador do proprietário via Tailscale Funnel.
+  // gratuito hospedado no computador do proprietário via Cloudflare Tunnel.
   if (!configured || configured === RETIRED_RAILWAY_API_URL) {
     return LOCAL_WHATSAPP_API_URL;
   }
