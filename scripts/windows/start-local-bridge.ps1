@@ -16,8 +16,6 @@ Assert-ConfiguredEnvironment -EnvironmentFile $environmentFile
 
 $node = Get-NodeExecutable
 if (-not $node) { throw "Node.js nao encontrado. Execute INSTALAR_CHATFACIL_LOCAL.cmd." }
-$tailscale = Get-TailscaleExecutable
-if (-not $tailscale) { throw "Tailscale nao encontrado. Execute INSTALAR_CHATFACIL_LOCAL.cmd." }
 
 New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
 
@@ -54,34 +52,15 @@ if (-not $healthy) {
   throw "Falha ao iniciar o servidor local."
 }
 
-$statusText = (& $tailscale status 2>&1 | Out-String)
-if ($LASTEXITCODE -ne 0 -or $statusText -match "Logged out|stopped|NeedsLogin") {
-  Write-Host "O navegador sera aberto para entrar gratuitamente no Tailscale." -ForegroundColor Yellow
-  & $tailscale up
-  if ($LASTEXITCODE -ne 0) { throw "Nao foi possivel conectar o Tailscale." }
-}
-
-$funnelOutput = (& $tailscale funnel --bg 3001 2>&1 | Out-String)
-if ($LASTEXITCODE -ne 0) {
-  Write-Host $funnelOutput
-  throw "Nao foi possivel ativar o endereco HTTPS do Tailscale."
-}
-
-$funnelStatus = (& $tailscale funnel status 2>&1 | Out-String)
-$urlMatch = [regex]::Match("$funnelOutput`n$funnelStatus", 'https://[a-zA-Z0-9.-]+\.ts\.net')
-$publicUrl = if ($urlMatch.Success) { $urlMatch.Value.TrimEnd('/') } else { "" }
+$publicUrl = "https://api.veltsapp.com"
+[IO.File]::WriteAllText((Join-Path $runtimeDir "public-url.txt"), $publicUrl)
 
 Write-Host "ChatFacil local esta funcionando." -ForegroundColor Green
-if ($publicUrl) {
-  [IO.File]::WriteAllText((Join-Path $runtimeDir "funnel-url.txt"), $publicUrl)
-  Write-Host ""
-  Write-Host "ENDERECO PARA COLOCAR NA VERCEL:" -ForegroundColor Yellow
-  Write-Host $publicUrl -ForegroundColor Cyan
-  Write-Host ""
-  Write-Host "Teste publico: $publicUrl/health"
-} else {
-  Write-Host "Use 'tailscale funnel status' para consultar o endereco publico." -ForegroundColor Yellow
-}
+Write-Host ""
+Write-Host "ENDERECO PUBLICO DO CLOUDFLARE:" -ForegroundColor Yellow
+Write-Host $publicUrl -ForegroundColor Cyan
+Write-Host ""
+Write-Host "Teste publico: $publicUrl/health"
 
 if (-not $Quiet) {
   Write-Host ""

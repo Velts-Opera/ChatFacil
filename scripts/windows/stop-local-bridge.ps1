@@ -16,10 +16,4 @@ if (Test-Path $pidFile) {
   Remove-Item $pidFile -Force
 }
 
-$tailscale = Get-TailscaleExecutable
-if ($tailscale) {
-  & $tailscale funnel reset | Out-Null
-  Write-Host "Endereco publico desativado."
-}
-
 Write-Host "ChatFacil local esta parado." -ForegroundColor Green
