@@ -6,7 +6,7 @@ import { MetaEmbeddedSignup } from "@/components/meta-embedded-signup";
 export const Route = createFileRoute("/onboarding/$token")({
   head: () => ({
     meta: [
-      { title: "Conectar WhatsApp — Comunica AI" },
+      { title: "Conectar WhatsApp — ChatFacil" },
       { name: "description", content: "Onboarding oficial do WhatsApp Business pela Meta." },
       { name: "robots", content: "noindex,nofollow" },
       { name: "referrer", content: "no-referrer" },
@@ -26,13 +26,13 @@ function WhatsAppOnboardingPage() {
           <div className="grid h-9 w-9 place-items-center rounded-lg bg-success text-success-foreground">
             <MessageSquareText className="h-5 w-5" />
           </div>
-          <span className="font-display text-xl font-extrabold">Comunica AI</span>
+          <span className="font-display text-xl font-extrabold">ChatFacil</span>
         </Link>
 
         <div className="rounded-2xl border bg-background p-5 shadow-sm sm:p-8">
           <div className="mb-6 text-center">
             <h1 className="font-display text-2xl font-bold">Ative o WhatsApp da sua empresa</h1>
-            <p className="mt-2 text-sm text-muted-foreground">A conexão usa o fluxo oficial da Meta. Nenhuma senha da sua conta é armazenada pela Comunica AI.</p>
+            <p className="mt-2 text-sm text-muted-foreground">A conexão usa o fluxo oficial da Meta. Nenhuma senha da sua conta é armazenada pelo ChatFacil.</p>
           </div>
           <MetaEmbeddedSignup token={token} onComplete={completed} />
         </div>
