@@ -117,7 +117,7 @@ function Hero() {
 function ProductFlow() {
   const items = [
     { title: "Sua empresa", text: "Conta, dados e agente separados por empresa." },
-    { title: "Seu WhatsApp", text: "Conexão por QR Code ou integração oficial Meta." },
+    { title: "Seu WhatsApp", text: "Autorização guiada pela integração oficial da Meta." },
     { title: "Seu atendimento", text: "Mensagens na Inbox com IA e transferência para humano." },
   ];
 
@@ -177,7 +177,7 @@ function FeatureGrid() {
     { icon: Users, title: "CRM de contatos", desc: "Tags, etapa do funil, valor potencial e histórico completo por cliente." },
     { icon: CalendarDays, title: "Agenda", desc: "Cadastre compromissos e acompanhe horários ligados ao atendimento." },
     { icon: MessageSquareText, title: "Respostas rápidas", desc: "Salve mensagens frequentes e use-as no atendimento humano." },
-    { icon: Radio, title: "Conexão do WhatsApp", desc: "Use QR Code, código de pareamento ou Meta Cloud API, conforme seu cenário." },
+    { icon: Radio, title: "Conexão do WhatsApp", desc: "Autorize o número no fluxo oficial da Meta; a infraestrutura fica por conta do ChatFacil." },
   ];
   return (
     <section id="recursos" className="bg-surface/50 py-20">
