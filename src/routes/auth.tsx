@@ -47,8 +47,8 @@ function getSupabaseAuthMessage(message: string) {
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
-      { title: "Entrar ou cadastrar — Comunica AI" },
-      { name: "description", content: "Acesse ou crie sua conta na Comunica AI." },
+      { title: "Entrar ou cadastrar — ChatFacil" },
+      { name: "description", content: "Acesse ou crie sua conta no ChatFacil." },
     ],
   }),
   component: AuthPage,
@@ -71,17 +71,17 @@ function AuthPage() {
             <div className="grid h-8 w-8 place-items-center rounded-lg bg-success text-success-foreground">
               <MessageSquareText className="h-4 w-4" />
             </div>
-            <span className="font-display text-lg font-extrabold">Comunica AI</span>
+            <span className="font-display text-lg font-extrabold">ChatFacil</span>
           </Link>
           <div>
             <h1 className="font-display text-4xl font-extrabold leading-tight">
               Transforme seu WhatsApp em uma máquina de atendimento e vendas.
             </h1>
             <p className="mt-4 text-primary-foreground/80">
-              Inbox multiatendente, CRM, IA treinada com seus dados e automações sem código — tudo em um só lugar.
+              Inbox, CRM e uma IA configurada com os dados da sua própria empresa.
             </p>
           </div>
-          <p className="text-xs text-primary-foreground/60">© {new Date().getFullYear()} Comunica AI</p>
+          <p className="text-xs text-primary-foreground/60">© {new Date().getFullYear()} ChatFacil</p>
         </div>
 
         <div className="flex items-center justify-center p-6">
@@ -90,7 +90,7 @@ function AuthPage() {
               <div className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-primary-foreground">
                 <MessageSquareText className="h-4 w-4" />
               </div>
-              <span className="font-display text-lg font-extrabold">Comunica AI</span>
+              <span className="font-display text-lg font-extrabold">ChatFacil</span>
             </Link>
             <Tabs defaultValue="login" className="w-full">
               <TabsList className="grid w-full grid-cols-2">

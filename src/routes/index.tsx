@@ -4,26 +4,22 @@ import {
   MessageSquareText,
   Users,
   Bot,
-  Workflow,
-  Megaphone,
-  BarChart3,
-  Check,
   Inbox,
   Sparkles,
   ArrowRight,
   ShieldCheck,
-  Instagram,
-  MessageCircle,
+  CalendarDays,
+  Radio,
 } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Comunica AI — Transforme seu WhatsApp em uma máquina de vendas" },
+      { title: "ChatFacil — Atendimento com IA no WhatsApp" },
       {
         name: "description",
         content:
-          "Plataforma de atendimento, CRM e automação para WhatsApp e Instagram. Automatize respostas, qualifique leads e venda mais com IA.",
+          "Atendimento, Inbox, CRM e IA treinada com os dados da sua empresa para operar no WhatsApp.",
       },
     ],
   }),
@@ -38,7 +34,7 @@ function Index() {
       <LogosStrip />
       <HowItWorks />
       <FeatureGrid />
-      <PlansSection />
+      <AccessSection />
       <FinalCTA />
       <SiteFooter />
     </div>
@@ -59,12 +55,12 @@ function SiteHeader() {
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
         <Link to="/" className="flex items-center gap-2">
           <Logo />
-          <span className="font-display text-lg font-extrabold tracking-tight">Comunica AI</span>
+          <span className="font-display text-lg font-extrabold tracking-tight">ChatFacil</span>
         </Link>
         <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
           <a href="#como-funciona" className="hover:text-foreground">Como funciona</a>
           <a href="#recursos" className="hover:text-foreground">Recursos</a>
-          <a href="#planos" className="hover:text-foreground">Planos</a>
+          <a href="#acesso" className="hover:text-foreground">Acesso</a>
         </nav>
         <div className="flex items-center gap-2">
           <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
@@ -108,71 +104,32 @@ function Hero() {
             </Button>
           </div>
           <p className="mt-4 text-xs text-muted-foreground">
-            Sem cartão de crédito · Cancele quando quiser
+            Crie sua conta de teste sem cartão de crédito
           </p>
         </div>
 
-        <div className="relative mx-auto mt-14 max-w-5xl">
-          <div className="rounded-2xl border border-border bg-card p-2 shadow-2xl shadow-primary/10">
-            <div className="rounded-xl bg-surface p-4">
-              <MockInbox />
-            </div>
-          </div>
-        </div>
+        <ProductFlow />
       </div>
     </section>
   );
 }
 
-function MockInbox() {
+function ProductFlow() {
+  const items = [
+    { title: "Sua empresa", text: "Conta, dados e agente separados por empresa." },
+    { title: "Seu WhatsApp", text: "Conexão por QR Code ou integração oficial Meta." },
+    { title: "Seu atendimento", text: "Mensagens na Inbox com IA e transferência para humano." },
+  ];
+
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-[220px_1fr_200px]">
-      <div className="rounded-lg bg-background p-3">
-        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Conversas</div>
-        {[
-          { name: "Contato WhatsApp", msg: "Mensagem recebida pela Cloud API" },
-          { name: "Cliente em atendimento", msg: "Resposta enviada pelo painel" },
-          { name: "Lead novo", msg: "IA consultando base cadastrada" },
-        ].map((c, i) => (
-          <div key={i} className={`rounded-md p-2 text-left ${i === 0 ? "bg-accent" : ""}`}>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-foreground">{c.name}</span>
-              <span className="text-[10px] text-muted-foreground">2m</span>
-            </div>
-            <div className="truncate text-xs text-muted-foreground">{c.msg}</div>
-          </div>
-        ))}
-      </div>
-      <div className="min-h-[220px] rounded-lg bg-background p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="grid h-8 w-8 place-items-center rounded-full bg-primary text-primary-foreground text-xs font-semibold">WA</div>
-            <div>
-              <div className="text-sm font-semibold">Contato real do WhatsApp</div>
-              <div className="text-[10px] text-muted-foreground">Cloud API · evento recebido</div>
-            </div>
-          </div>
-          <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-semibold text-success">IA atendendo</span>
+    <div className="mx-auto mt-14 grid max-w-5xl gap-4 md:grid-cols-3">
+      {items.map((item, index) => (
+        <div key={item.title} className="rounded-2xl border border-border bg-card p-6 text-left shadow-lg shadow-primary/5">
+          <div className="text-xs font-semibold text-success">0{index + 1}</div>
+          <div className="mt-2 font-display text-lg font-bold">{item.title}</div>
+          <p className="mt-2 text-sm text-muted-foreground">{item.text}</p>
         </div>
-        <div className="space-y-2">
-          <div className="max-w-[75%] rounded-2xl rounded-tl-sm bg-muted px-3 py-2 text-sm">Mensagem recebida pelo webhook oficial.</div>
-          <div className="ml-auto max-w-[75%] rounded-2xl rounded-tr-sm bg-primary px-3 py-2 text-sm text-primary-foreground">
-            Resposta gerada com a base de conhecimento da empresa.
-          </div>
-          <div className="max-w-[75%] rounded-2xl rounded-tl-sm bg-muted px-3 py-2 text-sm">Cliente responde e a conversa aparece no Inbox.</div>
-        </div>
-      </div>
-      <div className="hidden rounded-lg bg-background p-3 md:block">
-        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Contato</div>
-        <div className="mt-2 text-sm font-semibold">Contato real</div>
-        <div className="text-xs text-muted-foreground">Telefone recebido pela Meta</div>
-        <div className="mt-3 flex flex-wrap gap-1">
-          <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-semibold text-destructive">lead quente</span>
-          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-foreground">Instagram</span>
-        </div>
-        <div className="mt-4 text-[11px] text-muted-foreground">Etapa do funil</div>
-        <div className="text-sm">Agendamento</div>
-      </div>
+      ))}
     </div>
   );
 }
@@ -182,10 +139,10 @@ function LogosStrip() {
     <section className="border-y border-border/60 bg-surface/60 py-6">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-8 gap-y-2 px-4 text-xs font-medium uppercase tracking-widest text-muted-foreground">
         <span>WhatsApp</span><span>·</span>
-        <span>Instagram</span><span>·</span>
-        <span>Messenger</span><span>·</span>
-        <span>Webchat</span><span>·</span>
-        <span>Multi-atendente</span>
+        <span>IA por empresa</span><span>·</span>
+        <span>Inbox</span><span>·</span>
+        <span>CRM</span><span>·</span>
+        <span>Agenda</span>
       </div>
     </section>
   );
@@ -193,9 +150,9 @@ function LogosStrip() {
 
 function HowItWorks() {
   const steps = [
-    { n: "01", t: "Conecte seus canais", d: "WhatsApp, Instagram, Messenger e Webchat em um só lugar." },
+    { n: "01", t: "Cadastre sua empresa", d: "Crie a conta e informe serviços, horários e forma de atendimento." },
     { n: "02", t: "Treine sua IA", d: "Cadastre serviços, preços e horários. A IA responde com base neles." },
-    { n: "03", t: "Automatize e venda", d: "Fluxos por gatilhos, respostas rápidas e transferência para humano quando precisar." },
+    { n: "03", t: "Conecte e teste", d: "Conecte seu WhatsApp e valide o recebimento antes de iniciar o atendimento." },
   ];
   return (
     <section id="como-funciona" className="mx-auto max-w-6xl px-4 py-20">
@@ -215,12 +172,12 @@ function HowItWorks() {
 
 function FeatureGrid() {
   const features = [
-    { icon: Inbox, title: "Inbox multiatendente", desc: "Sua equipe atende junto, sem confusão. Filtros por status, IA ou humano." },
+    { icon: Inbox, title: "Inbox de atendimento", desc: "Acompanhe conversas, mensagens, status e a alternância entre IA e humano." },
     { icon: Bot, title: "IA treinada com sua empresa", desc: "Responde usando só seus dados. Quando não sabe, transfere para o humano." },
-    { icon: Workflow, title: "Automações sem código", desc: "Gatilhos por palavra-chave, primeira mensagem, tags, horário e mais." },
     { icon: Users, title: "CRM de contatos", desc: "Tags, etapa do funil, valor potencial e histórico completo por cliente." },
-    { icon: Megaphone, title: "Campanhas e mensagens", desc: "Envie mensagens para segmentos por tag, sempre com consentimento." },
-    { icon: BarChart3, title: "Relatórios", desc: "Taxa de resposta, conversas convertidas, desempenho da equipe e da IA." },
+    { icon: CalendarDays, title: "Agenda", desc: "Cadastre compromissos e acompanhe horários ligados ao atendimento." },
+    { icon: MessageSquareText, title: "Respostas rápidas", desc: "Salve mensagens frequentes e use-as no atendimento humano." },
+    { icon: Radio, title: "Conexão do WhatsApp", desc: "Use QR Code, código de pareamento ou Meta Cloud API, conforme seu cenário." },
   ];
   return (
     <section id="recursos" className="bg-surface/50 py-20">
@@ -242,76 +199,17 @@ function FeatureGrid() {
   );
 }
 
-function PlansSection() {
-  const plans = [
-    {
-      name: "Start",
-      price: "R$ 97",
-      desc: "Para começar a organizar seu atendimento.",
-      features: ["1 canal", "2 atendentes", "Inbox", "CRM", "Respostas rápidas", "IA básica"],
-      cta: "Começar",
-      highlight: false,
-    },
-    {
-      name: "Pro",
-      price: "R$ 247",
-      desc: "Automações e time crescendo.",
-      features: ["Tudo do Start", "Automações", "Campanhas", "Tags avançadas", "Relatórios", "Múltiplos atendentes"],
-      cta: "Assinar Pro",
-      highlight: true,
-    },
-    {
-      name: "Agência",
-      price: "R$ 697",
-      desc: "Para gerenciar várias empresas.",
-      features: ["Múltiplas empresas", "White label", "Painel de clientes", "Permissões avançadas"],
-      cta: "Falar com vendas",
-      highlight: false,
-    },
-  ];
+function AccessSection() {
   return (
-    <section id="planos" className="mx-auto max-w-6xl px-4 py-20">
-      <SectionHeading eyebrow="Planos" title="Escolha o plano ideal para o seu negócio" />
-      <div className="mt-10 grid gap-4 md:grid-cols-3">
-        {plans.map((p) => (
-          <div
-            key={p.name}
-            className={`rounded-2xl border p-6 ${
-              p.highlight
-                ? "border-primary bg-primary text-primary-foreground shadow-xl shadow-primary/20"
-                : "border-border bg-card"
-            }`}
-          >
-            <div className="flex items-baseline justify-between">
-              <div className="font-display text-xl font-bold">{p.name}</div>
-              {p.highlight && (
-                <span className="rounded-full bg-success px-2 py-0.5 text-[10px] font-semibold text-success-foreground">
-                  Popular
-                </span>
-              )}
-            </div>
-            <div className="mt-2 text-3xl font-extrabold">
-              {p.price}
-              <span className={`text-sm font-normal ${p.highlight ? "text-primary-foreground/70" : "text-muted-foreground"}`}>/mês</span>
-            </div>
-            <p className={`mt-1 text-sm ${p.highlight ? "text-primary-foreground/80" : "text-muted-foreground"}`}>{p.desc}</p>
-            <ul className="mt-5 space-y-2 text-sm">
-              {p.features.map((f) => (
-                <li key={f} className="flex items-center gap-2">
-                  <Check className={`h-4 w-4 ${p.highlight ? "text-success-foreground" : "text-success"}`} />
-                  {f}
-                </li>
-              ))}
-            </ul>
-            <Button
-              asChild
-              className={`mt-6 w-full ${p.highlight ? "bg-success text-success-foreground hover:bg-success/90" : ""}`}
-              variant={p.highlight ? "default" : "outline"}
-            >
-              <Link to="/auth">{p.cta}</Link>
-            </Button>
-          </div>
-        ))}
+    <section id="acesso" className="mx-auto max-w-4xl px-4 py-20">
+      <div className="rounded-3xl border border-border bg-card p-8 text-center md:p-12">
+        <SectionHeading eyebrow="Acesso de teste" title="Valide o ChatFacil com a sua empresa" />
+        <p className="mx-auto mt-4 max-w-2xl text-sm text-muted-foreground">
+          O cadastro de teste não exige cartão. Planos e cobrança automática só serão publicados depois da validação comercial completa.
+        </p>
+        <Button asChild size="lg" className="mt-7">
+          <Link to="/auth">Criar conta de teste</Link>
+        </Button>
       </div>
     </section>
   );
@@ -359,14 +257,12 @@ function SiteFooter() {
       <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-4 px-4 md:flex-row md:items-center">
         <div className="flex items-center gap-2">
           <Logo />
-          <span className="font-display text-sm font-bold">Comunica AI</span>
+          <span className="font-display text-sm font-bold">ChatFacil</span>
         </div>
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1"><ShieldCheck className="h-3.5 w-3.5" /> Dados protegidos</span>
-          <span className="inline-flex items-center gap-1"><MessageCircle className="h-3.5 w-3.5" /> Suporte humano</span>
-          <span className="inline-flex items-center gap-1"><Instagram className="h-3.5 w-3.5" /> @comunica.ai</span>
+          <span className="inline-flex items-center gap-1"><ShieldCheck className="h-3.5 w-3.5" /> Dados separados por empresa</span>
         </div>
-        <div className="text-xs text-muted-foreground">© {new Date().getFullYear()} Comunica AI</div>
+        <div className="text-xs text-muted-foreground">© {new Date().getFullYear()} ChatFacil</div>
       </div>
     </footer>
   );

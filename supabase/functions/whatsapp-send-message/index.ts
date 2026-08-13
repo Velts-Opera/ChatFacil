@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
 
     let to = cleanPhone(body.to ?? "");
     let contactName: string | undefined;
-    let conversationIdFromBody = body.conversation_id;
+    const conversationIdFromBody = body.conversation_id;
 
     if (conversationIdFromBody) {
       const { data: conversation, error } = await admin

@@ -5,7 +5,7 @@ import { Inbox, UserPlus, Clock, Bot, TrendingUp, CheckCircle2, Megaphone, Radio
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
-  head: () => ({ meta: [{ title: "Dashboard — Comunica AI" }] }),
+  head: () => ({ meta: [{ title: "Dashboard — ChatFacil" }] }),
   component: Dashboard,
 });
 

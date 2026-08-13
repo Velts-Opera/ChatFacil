@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/configuracoes")({
-  head: () => ({ meta: [{ title: "Configurações — Comunica AI" }] }),
+  head: () => ({ meta: [{ title: "Configurações — ChatFacil" }] }),
   component: SettingsPage,
 });
 
