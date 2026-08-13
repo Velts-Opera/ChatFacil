@@ -83,7 +83,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="grid h-8 w-8 place-items-center rounded-lg bg-success text-success-foreground">
               <MessageSquareText className="h-4 w-4" />
             </div>
-            <span className="font-display text-base font-extrabold">Comunica AI</span>
+            <span className="font-display text-base font-extrabold">ChatFacil</span>
           </Link>
           <button onClick={() => setOpen(false)} className="md:hidden" aria-label="Fechar menu">
             <X className="h-5 w-5" />
@@ -155,7 +155,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button onClick={() => setOpen(true)} aria-label="Abrir menu">
             <Menu className="h-5 w-5" />
           </button>
-          <span className="font-display text-sm font-bold">Comunica AI</span>
+          <span className="font-display text-sm font-bold">ChatFacil</span>
         </header>
         <main className="flex-1 min-w-0">{children}</main>
       </div>
