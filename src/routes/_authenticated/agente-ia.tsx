@@ -19,7 +19,7 @@ import { Plus, Trash2, Bot, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/agente-ia")({
-  head: () => ({ meta: [{ title: "Agente IA — Comunica AI" }] }),
+  head: () => ({ meta: [{ title: "Agente IA — ChatFacil" }] }),
   component: AiAgentPage,
 });
 
