@@ -1,11 +1,11 @@
 # ChatFácil no seu PC, sem mensalidade
 
-Esta opção mantém o painel na Vercel e o banco no Supabase, mas executa a conexão do WhatsApp no seu próprio computador. O Tailscale Funnel fornece o endereço HTTPS público sem abrir portas no roteador e sem exigir cartão.
+Esta opção mantém o painel na Vercel e o banco no Supabase, mas executa a conexão do WhatsApp no seu próprio computador. O Cloudflare Tunnel publica `https://api.veltsapp.com` sem abrir portas no roteador e sem exigir cartão.
 
 ## O que continua gratuito
 
 - servidor do WhatsApp: seu computador;
-- endereço HTTPS: plano pessoal gratuito do Tailscale;
+- endereço HTTPS: Cloudflare Tunnel no domínio `veltsapp.com`;
 - painel: Vercel, dentro dos limites gratuitos;
 - banco e autenticação: Supabase, dentro dos limites gratuitos.
 
@@ -17,9 +17,9 @@ A API de inteligência artificial pode ter cobrança própria. É possível deix
 2. Atualize esta pasta com a branch que contém a hospedagem local.
 3. Dê dois cliques em `INSTALAR_CHATFACIL_LOCAL.cmd`.
 4. Quando solicitado, cole os valores do Supabase. A chave de IA é opcional.
-5. Entre gratuitamente no Tailscale na janela do navegador.
-6. Na primeira ativação do Funnel, aprove o HTTPS na página que o Tailscale abrir.
-7. Copie o endereço exibido como `ENDERECO PARA COLOCAR NA VERCEL`.
+5. Confirme que o serviço do Cloudflare Tunnel chamado `ChatFacil` está íntegro.
+6. Confirme que a rota `api.veltsapp.com` aponta para `http://localhost:3001`.
+7. Teste `https://api.veltsapp.com/health` no navegador.
 
 O instalador também cria um atalho na pasta de inicialização do Windows. Assim, o servidor volta sozinho quando você entra no Windows.
 
@@ -27,7 +27,7 @@ O instalador também cria um atalho na pasta de inicialização do Windows. Assi
 
 Na Vercel, abra o projeto do ChatFácil e acesse **Settings > Environment Variables**:
 
-1. altere `VITE_WA_API_URL` para o endereço `https://...ts.net` mostrado pelo instalador, sem barra no final;
+1. altere `VITE_WA_API_URL` para `https://api.veltsapp.com`, sem barra no final;
 2. aplique em **Production**, **Preview** e **Development**;
 3. faça um novo deploy em **Deployments > Redeploy**.
 
@@ -35,8 +35,8 @@ Depois, abra o ChatFácil e gere um novo QR Code. As sessões do volume antigo d
 
 ## Atalhos
 
-- `INICIAR_CHATFACIL_LOCAL.cmd`: inicia e mostra o endereço público;
-- `PARAR_CHATFACIL_LOCAL.cmd`: encerra o servidor e desativa o endereço público;
+- `INICIAR_CHATFACIL_LOCAL.cmd`: inicia o servidor e mostra o endereço público;
+- `PARAR_CHATFACIL_LOCAL.cmd`: encerra o servidor local;
 - `CONFIGURAR_CHATFACIL_LOCAL.cmd`: troca chaves, URL do painel ou provedor de IA;
 - `ATIVAR_INICIO_AUTOMATICO_CHATFACIL.cmd`: recria o início automático.
 
@@ -45,7 +45,7 @@ Os logs ficam em `server/.runtime/bridge.log` e `server/.runtime/bridge-error.lo
 ## Limitações
 
 - o WhatsApp fica offline se o PC desligar, dormir, perder internet ou sair da conta do Windows;
-- o Funnel é um recurso beta e tem limite de banda não configurável;
+- o endereço público depende do serviço do Cloudflare Tunnel estar ativo no Windows;
 - essa solução é adequada para testes e uso leve; para operação comercial crítica, use um servidor pago com monitoramento e backup.
 
-Documentação oficial: [Tailscale Funnel](https://tailscale.com/docs/features/tailscale-funnel) e [preços do Tailscale](https://tailscale.com/pricing).
+Documentação oficial: [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/).
