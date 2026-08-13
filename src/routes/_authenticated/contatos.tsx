@@ -17,7 +17,7 @@ import { Plus } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/contatos")({
-  head: () => ({ meta: [{ title: "Contatos — Comunica AI" }] }),
+  head: () => ({ meta: [{ title: "Contatos — ChatFacil" }] }),
   component: ContactsPage,
 });
 
@@ -123,7 +123,7 @@ function ContactsPage() {
                 <div><Label htmlFor="cn">Nome</Label><Input id="cn" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
                 <div><Label htmlFor="cp">Telefone</Label><Input id="cp" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
                 <div><Label htmlFor="ce">E-mail</Label><Input id="ce" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
-                <div><Label htmlFor="cs">Origem</Label><Input id="cs" placeholder="WhatsApp, Instagram…" value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} /></div>
+                <div><Label htmlFor="cs">Origem</Label><Input id="cs" placeholder="WhatsApp, indicação…" value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} /></div>
               </div>
               <DialogFooter>
                 <Button onClick={() => createContact.mutate()} disabled={!form.name || createContact.isPending}>Criar</Button>
