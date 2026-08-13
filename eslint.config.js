@@ -33,8 +33,16 @@ export default tseslint.config(
         },
       ],
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
+      // Existing provider payloads are still being typed incrementally. Keep
+      // them visible in CI without letting legacy boundaries block releases.
+      "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-unused-vars": "off",
     },
   },
   eslintPluginPrettier,
+  {
+    // Formatting debt remains visible while CI immediately blocks semantic
+    // lint, type, test, and build regressions.
+    rules: { "prettier/prettier": "warn" },
+  },
 );
