@@ -29,7 +29,7 @@ import {
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/admin")({
-  head: () => ({ meta: [{ title: "Painel do Administrador — Comunica AI" }] }),
+  head: () => ({ meta: [{ title: "Painel do Administrador — ChatFacil" }] }),
   beforeLoad: async () => {
     const { data, error } = await supabase.rpc("is_super_admin");
     if (error || !data) throw redirect({ to: "/dashboard" });
