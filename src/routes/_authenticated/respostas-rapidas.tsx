@@ -13,7 +13,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/respostas-rapidas")({
-  head: () => ({ meta: [{ title: "Respostas rápidas — Comunica AI" }] }),
+  head: () => ({ meta: [{ title: "Respostas rápidas — ChatFacil" }] }),
   component: QuickRepliesPage,
 });
 
