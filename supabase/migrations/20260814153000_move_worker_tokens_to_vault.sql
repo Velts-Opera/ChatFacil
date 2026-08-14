@@ -6,7 +6,17 @@ DO $$
 DECLARE
   cron_token text := encode(extensions.gen_random_bytes(48), 'hex');
   conversation_token text := encode(extensions.gen_random_bytes(48), 'hex');
+  cron_job_id bigint;
 BEGIN
+  SELECT jobid INTO cron_job_id
+  FROM cron.job
+  WHERE command ILIKE '%functions/v1/business-automation-worker%'
+  LIMIT 1;
+
+  IF cron_job_id IS NULL THEN
+    RAISE EXCEPTION 'business-automation-worker cron job not found';
+  END IF;
+
   PERFORM vault.create_secret(
     cron_token,
     'chatfacil_business_automation_cron_token',
@@ -30,25 +40,22 @@ BEGIN
     (encode(extensions.digest(cron_token, 'sha256'), 'hex'), 'business-automation-cron', true),
     (encode(extensions.digest(conversation_token, 'sha256'), 'hex'), 'business-conversation-worker', true);
 
-  UPDATE cron.job
-  SET command = $cron$
-    select net.http_post(
-      url := 'https://ncosftsthrzznevzkvbi.supabase.co/functions/v1/business-automation-worker',
-      headers := jsonb_build_object(
-        'Content-Type', 'application/json',
-        'x-chatfacil-worker-token',
-        (select decrypted_secret
-         from vault.decrypted_secrets
-         where name = 'chatfacil_business_automation_cron_token')
-      ),
-      body := '{"limit":20}'::jsonb
-    );
-  $cron$
-  WHERE command ILIKE '%functions/v1/business-automation-worker%';
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'business-automation-worker cron job not found';
-  END IF;
+  PERFORM cron.alter_job(
+    job_id := cron_job_id,
+    command := $cron$
+      select net.http_post(
+        url := 'https://ncosftsthrzznevzkvbi.supabase.co/functions/v1/business-automation-worker',
+        headers := jsonb_build_object(
+          'Content-Type', 'application/json',
+          'x-chatfacil-worker-token',
+          (select decrypted_secret
+           from vault.decrypted_secrets
+           where name = 'chatfacil_business_automation_cron_token')
+        ),
+        body := '{"limit":20}'::jsonb
+      );
+    $cron$
+  );
 END;
 $$;
 
