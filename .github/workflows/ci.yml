@@ -46,5 +46,25 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Test Meta webhook security
+        run: node --experimental-strip-types --test supabase/functions/_shared/meta-webhook-auth.test.ts
+
       - name: Build
         run: npm run build:vite
+
+  database-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+
+      - name: Rebuild database from Git
+        run: supabase start
+
+      - name: Test tenant isolation and RPC grants
+        run: supabase test db supabase/tests/tenant_isolation.test.sql
