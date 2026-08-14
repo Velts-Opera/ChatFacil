@@ -1,7 +1,3 @@
--- A API oficial da Meta passa a ser o único fluxo provisionado para novos clientes.
--- O canal é criado somente depois que o proprietário autoriza o número pelo
--- WhatsApp Embedded Signup; não criamos mais sessões QR/Baileys por padrão.
-
 CREATE OR REPLACE FUNCTION public.seed_company_defaults(_company_id uuid)
 RETURNS void
 LANGUAGE plpgsql

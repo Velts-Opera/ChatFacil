@@ -1,0 +1,3 @@
+-- History marker for the production migration 20260728215159_disable_pg_net_after_synthetic_webhook_audit.
+-- The original migration performed a one-time external diagnostic/audit and is intentionally
+-- not replayed during deterministic database rebuilds. It made no persistent product-schema change.

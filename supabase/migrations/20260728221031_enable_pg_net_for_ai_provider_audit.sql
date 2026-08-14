@@ -1,0 +1,3 @@
+-- History marker for the production migration 20260728221031_enable_pg_net_for_ai_provider_audit.
+-- The original migration performed a one-time external diagnostic/audit and is intentionally
+-- not replayed during deterministic database rebuilds. It made no persistent product-schema change.

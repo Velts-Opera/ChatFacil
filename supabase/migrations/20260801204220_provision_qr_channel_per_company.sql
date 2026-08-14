@@ -1,5 +1,6 @@
 -- Etapa 2: toda empresa nasce com agente + canal WhatsApp (qr_code) prontos.
 
+-- 0) Dedupe: mantém o canal qr_code mais relevante por empresa; remove órfãos sem conversas.
 WITH ranked AS (
   SELECT id, company_id,
          row_number() OVER (
@@ -13,6 +14,7 @@ USING ranked r
 WHERE ch.id = r.id AND r.rn > 1
   AND NOT EXISTS (SELECT 1 FROM public.conversations v WHERE v.channel_id = ch.id);
 
+-- 1) Ponto único de provisionamento (handle_new_user + admin_create_company)
 CREATE OR REPLACE FUNCTION public.seed_company_defaults(_company_id uuid)
 RETURNS void
 LANGUAGE plpgsql
@@ -37,6 +39,7 @@ BEGIN
   VALUES (_company_id)
   ON CONFLICT (company_id) DO NOTHING;
 
+  -- Canal WhatsApp padrão via QR (Baileys). Um por empresa; idempotente.
   INSERT INTO public.channels (company_id, type, provider, name, status, ai_enabled, auto_reply_enabled)
   SELECT _company_id, 'whatsapp', 'qr_code', 'WhatsApp', 'disconnected', true, true
   WHERE NOT EXISTS (
@@ -46,6 +49,7 @@ BEGIN
 END;
 $function$;
 
+-- 2) Backfill: empresas sem canal qr_code
 INSERT INTO public.channels (company_id, type, provider, name, status, ai_enabled, auto_reply_enabled)
 SELECT c.id, 'whatsapp', 'qr_code', 'WhatsApp', 'disconnected', true, true
 FROM public.companies c
@@ -54,10 +58,12 @@ WHERE NOT EXISTS (
   WHERE ch.company_id = c.id AND ch.type = 'whatsapp' AND ch.provider = 'qr_code'
 );
 
+-- 3) Backfill: empresas sem ai_agent_settings
 INSERT INTO public.ai_agent_settings (company_id)
 SELECT c.id FROM public.companies c
 WHERE NOT EXISTS (SELECT 1 FROM public.ai_agent_settings s WHERE s.company_id = c.id)
 ON CONFLICT (company_id) DO NOTHING;
 
+-- 4) Garantia: 1 canal qr_code por empresa
 CREATE UNIQUE INDEX IF NOT EXISTS uq_channels_company_qr
   ON public.channels (company_id) WHERE provider = 'qr_code' AND type = 'whatsapp';

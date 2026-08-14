@@ -2,6 +2,39 @@
 -- Tokens are generated in the database, hashed for verification, and only
 -- decrypted by privileged code through Supabase Vault at request time.
 
+-- A fresh rebuild may not have the production-only cron history that preceded
+-- this migration. Establish the scheduler contract before rotating its token.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM cron.job
+    WHERE jobname = 'chatfacil-business-automation'
+       OR command ILIKE '%functions/v1/business-automation-worker%'
+  ) THEN
+    PERFORM cron.schedule(
+      'chatfacil-business-automation',
+      '*/5 * * * *',
+      $cron$
+        SELECT net.http_post(
+          url := rtrim(config.value, '/') || '/business-automation-worker',
+          headers := jsonb_build_object(
+            'Content-Type', 'application/json',
+            'x-chatfacil-worker-token',
+            (SELECT token
+             FROM public.internal_worker_secrets
+             WHERE name = 'business-automation-cron')
+          ),
+          body := '{"limit":20}'::jsonb
+        )
+        FROM public.internal_runtime_config AS config
+        WHERE config.key = 'edge_function_base_url';
+      $cron$
+    );
+  END IF;
+END;
+$$;
+
 DO $$
 DECLARE
   cron_token text := encode(extensions.gen_random_bytes(48), 'hex');
