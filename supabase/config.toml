@@ -26,3 +26,51 @@ verify_jwt = false
 
 [functions.business-automation-worker]
 verify_jwt = false
+
+[functions.whatsapp-qr-event]
+verify_jwt = true
+
+[functions.whatsapp-qr-bridge]
+verify_jwt = true
+
+[functions.evolution-webhook]
+verify_jwt = true
+
+[functions.meta-business-agent]
+verify_jwt = true
+
+[functions.meta-app-audit]
+verify_jwt = true
+
+[functions.meta-waba-repair]
+verify_jwt = true
+
+[functions.generate-agent-prompt]
+verify_jwt = true
+
+[functions.audit-auth-security]
+verify_jwt = true
+
+[functions.meta-coexistence-audit]
+verify_jwt = true
+
+[functions.audit-webhook-synthetic]
+verify_jwt = true
+
+[functions.audit-agent-generator]
+verify_jwt = true
+
+[functions.audit-admin-flow]
+verify_jwt = true
+
+[functions.audit-ai-provider]
+verify_jwt = true
+
+[functions.audit-agent-generator-v2]
+verify_jwt = true
+
+[functions.audit-regular-user-qr]
+verify_jwt = true
+
+[functions.meta-app-login-audit]
+verify_jwt = true
