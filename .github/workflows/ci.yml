@@ -66,5 +66,5 @@ jobs:
       - name: Rebuild database from Git
         run: supabase start
 
-      - name: Test tenant isolation and RPC grants
-        run: supabase test db supabase/tests/tenant_isolation.test.sql
+      - name: Test schema parity, tenant isolation, and RPC grants
+        run: supabase test db
