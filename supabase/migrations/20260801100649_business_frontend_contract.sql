@@ -32,8 +32,7 @@ BEGIN
   );
 
   RETURN QUERY
-  SELECT *
-  FROM public.business_hours
+  SELECT * FROM public.business_hours
   WHERE company_id=_company_id
   ORDER BY weekday,opens_at;
 END;
@@ -59,8 +58,7 @@ BEGIN
     RAISE EXCEPTION 'Acesso negado à empresa';
   END IF;
   IF NOT EXISTS(
-    SELECT 1
-    FROM public.business_resources
+    SELECT 1 FROM public.business_resources
     WHERE id=_resource_id AND company_id=_company_id
   ) THEN
     RAISE EXCEPTION 'Recurso não pertence à empresa';
@@ -105,80 +103,32 @@ BEGIN
   END IF;
 
   SELECT jsonb_build_object(
-    'services_count',(
-      SELECT count(*)
-      FROM public.business_services
-      WHERE company_id=_company_id AND active
-    ),
-    'resources_count',(
-      SELECT count(*)
-      FROM public.business_resources
-      WHERE company_id=_company_id AND active
-    ),
-    'business_hours_count',(
-      SELECT count(*)
-      FROM public.business_hours
-      WHERE company_id=_company_id AND active
-    ),
-    'connected_whatsapp',(
-      SELECT EXISTS(
-        SELECT 1
-        FROM public.channels
-        WHERE company_id=_company_id
-          AND type='whatsapp'
-          AND provider='meta_cloud_api'
-          AND status='connected'
-      )
-    ),
-    'approved_templates_count',(
-      SELECT count(*)
-      FROM public.whatsapp_templates wt
+    'services_count',(SELECT count(*) FROM public.business_services WHERE company_id=_company_id AND active),
+    'resources_count',(SELECT count(*) FROM public.business_resources WHERE company_id=_company_id AND active),
+    'business_hours_count',(SELECT count(*) FROM public.business_hours WHERE company_id=_company_id AND active),
+    'connected_whatsapp',(SELECT EXISTS(
+      SELECT 1 FROM public.channels
+      WHERE company_id=_company_id
+        AND type='whatsapp'
+        AND provider='meta_cloud_api'
+        AND status='connected'
+    )),
+    'approved_templates_count',(SELECT count(*) FROM public.whatsapp_templates wt
       JOIN public.channels ch ON ch.id=wt.channel_id
       WHERE wt.company_id=_company_id
         AND ch.provider='meta_cloud_api'
         AND upper(COALESCE(wt.status,''))='APPROVED'
     ),
     'booking_ready',(
-      EXISTS(
-        SELECT 1 FROM public.business_services
-        WHERE company_id=_company_id AND active
-      )
-      AND EXISTS(
-        SELECT 1 FROM public.business_resources
-        WHERE company_id=_company_id AND active
-      )
-      AND EXISTS(
-        SELECT 1 FROM public.business_hours
-        WHERE company_id=_company_id AND active
-      )
-      AND EXISTS(
-        SELECT 1 FROM public.channels
-        WHERE company_id=_company_id
-          AND type='whatsapp'
-          AND provider='meta_cloud_api'
-          AND status='connected'
-      )
+      EXISTS(SELECT 1 FROM public.business_services WHERE company_id=_company_id AND active)
+      AND EXISTS(SELECT 1 FROM public.business_resources WHERE company_id=_company_id AND active)
+      AND EXISTS(SELECT 1 FROM public.business_hours WHERE company_id=_company_id AND active)
+      AND EXISTS(SELECT 1 FROM public.channels WHERE company_id=_company_id AND type='whatsapp' AND provider='meta_cloud_api' AND status='connected')
     ),
     'outreach_ready',(
-      EXISTS(
-        SELECT 1 FROM public.business_services
-        WHERE company_id=_company_id AND active
-      )
-      AND EXISTS(
-        SELECT 1 FROM public.channels
-        WHERE company_id=_company_id
-          AND type='whatsapp'
-          AND provider='meta_cloud_api'
-          AND status='connected'
-      )
-      AND EXISTS(
-        SELECT 1
-        FROM public.whatsapp_templates wt
-        JOIN public.channels ch ON ch.id=wt.channel_id
-        WHERE wt.company_id=_company_id
-          AND ch.provider='meta_cloud_api'
-          AND upper(COALESCE(wt.status,''))='APPROVED'
-      )
+      EXISTS(SELECT 1 FROM public.business_services WHERE company_id=_company_id AND active)
+      AND EXISTS(SELECT 1 FROM public.channels WHERE company_id=_company_id AND type='whatsapp' AND provider='meta_cloud_api' AND status='connected')
+      AND EXISTS(SELECT 1 FROM public.whatsapp_templates wt JOIN public.channels ch ON ch.id=wt.channel_id WHERE wt.company_id=_company_id AND ch.provider='meta_cloud_api' AND upper(COALESCE(wt.status,''))='APPROVED')
     )
   ) INTO result;
 

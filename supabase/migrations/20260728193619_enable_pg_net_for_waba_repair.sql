@@ -1,0 +1,3 @@
+-- History marker for the production migration 20260728193619_enable_pg_net_for_waba_repair.
+-- The original migration performed a one-time external diagnostic/audit and is intentionally
+-- not replayed during deterministic database rebuilds. It made no persistent product-schema change.

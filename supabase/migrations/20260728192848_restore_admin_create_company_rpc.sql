@@ -1,5 +1,3 @@
--- Restore admin tenant provisioning RPCs if they were dropped by later schema changes.
-
 CREATE OR REPLACE FUNCTION public.seed_company_defaults(_company_id UUID)
 RETURNS VOID
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
