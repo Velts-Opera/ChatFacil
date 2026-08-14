@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(55);
+select plan(65);
 
 insert into auth.users (id, email, raw_user_meta_data)
 values
@@ -175,6 +175,73 @@ select throws_matching(
   format('select public.business_metrics(%L::uuid,now()-interval ''30 days'',now())', current_setting('test.company_b')),
   'Acesso negado',
   'metrics nega empresa A -> B'
+);
+
+select results_eq(
+  $$select count(*) from public.admin_company_overview()$$,
+  array[0::bigint],
+  'usuário comum não enxerga visão global de admin'
+);
+select throws_matching(
+  $$select public.admin_create_company('Ataque global')$$,
+  'administrador da plataforma',
+  'usuário comum não cria empresa por RPC de admin'
+);
+select throws_matching(
+  format('select public.admin_enter_company(%L::uuid)', current_setting('test.company_b')),
+  'administrador da plataforma',
+  'usuário comum não troca contexto para empresa B'
+);
+select throws_matching(
+  format(
+    'select * from public.business_available_slots(%L::uuid,%L::uuid,now(),now()+interval ''7 days'',%L::uuid)',
+    current_setting('test.company_b'),
+    'b0000000-0000-4000-8000-000000000006',
+    'b0000000-0000-4000-8000-000000000007'
+  ),
+  'Acesso negado',
+  'slots nega empresa A -> B'
+);
+select throws_matching(
+  format(
+    'select public.business_book_appointment(%L::uuid,%L::uuid,%L::uuid,%L::uuid,now()+interval ''1 day'')',
+    current_setting('test.company_b'),
+    'b0000000-0000-4000-8000-000000000001',
+    'b0000000-0000-4000-8000-000000000006',
+    'b0000000-0000-4000-8000-000000000007'
+  ),
+  'Acesso negado',
+  'agendamento por RPC nega empresa A -> B'
+);
+select throws_matching(
+  $$select public.business_cancel_appointment('b0000000-0000-4000-8000-000000000005')$$,
+  'Acesso negado',
+  'cancelamento por RPC nega empresa A -> B'
+);
+select throws_matching(
+  $$select public.business_complete_appointment('b0000000-0000-4000-8000-000000000005')$$,
+  'Acesso negado',
+  'conclusão por RPC nega empresa A -> B'
+);
+select throws_matching(
+  format('select public.business_onboarding_status(%L::uuid)', current_setting('test.company_b')),
+  'Acesso negado',
+  'onboarding status nega empresa A -> B'
+);
+select throws_matching(
+  format('select * from public.business_replace_hours(%L::uuid,%L::jsonb)', current_setting('test.company_b'), '[]'),
+  'Acesso negado',
+  'configuração de horários nega empresa A -> B'
+);
+select throws_matching(
+  format(
+    'select public.business_set_resource_services(%L::uuid,%L::uuid,ARRAY[%L::uuid])',
+    current_setting('test.company_b'),
+    'b0000000-0000-4000-8000-000000000007',
+    'b0000000-0000-4000-8000-000000000006'
+  ),
+  'Acesso negado',
+  'vínculo profissional-serviço nega empresa A -> B'
 );
 
 select * from finish();
