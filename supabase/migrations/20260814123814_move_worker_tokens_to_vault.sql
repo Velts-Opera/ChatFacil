@@ -10,7 +10,8 @@ DECLARE
 BEGIN
   SELECT jobid INTO cron_job_id
   FROM cron.job
-  WHERE command ILIKE '%functions/v1/business-automation-worker%'
+  WHERE jobname = 'chatfacil-business-automation'
+     OR command ILIKE '%functions/v1/business-automation-worker%'
   LIMIT 1;
 
   IF cron_job_id IS NULL THEN
@@ -43,8 +44,8 @@ BEGIN
   PERFORM cron.alter_job(
     job_id := cron_job_id,
     command := $cron$
-      select net.http_post(
-        url := 'https://ncosftsthrzznevzkvbi.supabase.co/functions/v1/business-automation-worker',
+      SELECT net.http_post(
+        url := rtrim(config.value, '/') || '/business-automation-worker',
         headers := jsonb_build_object(
           'Content-Type', 'application/json',
           'x-chatfacil-worker-token',
@@ -53,7 +54,9 @@ BEGIN
            where name = 'chatfacil_business_automation_cron_token')
         ),
         body := '{"limit":20}'::jsonb
-      );
+      )
+      FROM public.internal_runtime_config AS config
+      WHERE config.key = 'edge_function_base_url';
     $cron$
   );
 END;
