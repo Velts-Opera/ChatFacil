@@ -23,14 +23,24 @@ export async function requireUser(req: Request) {
   if (error || !data.user) throw new Error("Unauthorized");
 
   const admin = adminClient();
-  const { data: profile, error: profileError } = await admin
-    .from("profiles")
-    .select("company_id")
-    .eq("id", data.user.id)
-    .maybeSingle();
-
+  const [{ data: profile, error: profileError }, { data: platformAdmin, error: adminError }] =
+    await Promise.all([
+      admin
+        .from("profiles")
+        .select("company_id, companies(is_active)")
+        .eq("id", data.user.id)
+        .maybeSingle(),
+      admin.from("platform_admins").select("user_id").eq("user_id", data.user.id).maybeSingle(),
+    ]);
   if (profileError) throw profileError;
+  if (adminError) throw adminError;
   if (!profile?.company_id) throw new Error("Company not found for authenticated user");
 
-  return { user: data.user, companyId: profile.company_id as string, admin };
+  const company = Array.isArray((profile as any).companies)
+    ? (profile as any).companies[0]
+    : (profile as any).companies;
+  const isSuperAdmin = Boolean(platformAdmin?.user_id);
+  if (company?.is_active !== true && !isSuperAdmin) throw new Error("Company access disabled");
+
+  return { user: data.user, companyId: profile.company_id as string, admin, isSuperAdmin };
 }
