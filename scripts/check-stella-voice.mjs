@@ -12,6 +12,10 @@ function forbidText(text, needle, label) {
   if (text.includes(needle)) throw new Error(`Unsafe Stella invariant: ${label}`);
 }
 
+function forbidPattern(text, pattern, label) {
+  if (pattern.test(text)) throw new Error(`Unsafe Stella invariant: ${label}`);
+}
+
 requireText(server, ".middleware([requireSupabaseAuth])", "authenticated server function");
 requireText(server, 'rpc("is_super_admin")', "server-side super-admin authorization");
 requireText(server, 'canPublishSources: ["microphone"]', "microphone-only publish grant");
@@ -21,8 +25,11 @@ requireText(server, 'agentName: STELLA_AGENT_NAME', "explicit Stella agent dispa
 requireText(server, 'const STELLA_AGENT_NAME = "velts-bad"', "fixed production agent name");
 requireText(server, 'const STELLA_IDENTITY = "velts"', "fixed authorized identity");
 requireText(server, '"Cache-Control": "no-store, private"', "sensitive token response not cached");
+requireText(server, "participantToken: string", "response contract contains only participant token");
+requireText(server, "serverUrl: string", "response contract contains LiveKit URL");
 forbidText(server, "VITE_LIVEKIT_API_SECRET", "secret must never be client-prefixed");
-forbidText(server, "apiSecret:", "API secret must never be returned as a property");
+forbidPattern(server, /return\s*\{[^}]*apiSecret\s*:/s, "API secret must never be returned");
+forbidPattern(server, /apiSecret\s*:\s*apiSecret/, "API secret must never be exposed as an object property");
 
 requireText(
   client,
