@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 const server = readFileSync("src/lib/stella-voice.server.ts", "utf8");
 const client = readFileSync("src/components/stella-voice-panel.tsx", "utf8");
 const start = readFileSync("src/start.ts", "utf8");
+const publisher = readFileSync("scripts/publish-stella-vercel.ps1", "utf8");
 
 function requireText(text, needle, label) {
   if (!text.includes(needle)) throw new Error(`Missing Stella invariant: ${label}`);
@@ -43,5 +44,16 @@ forbidText(client, "participantToken}", "token must not be rendered in JSX");
 
 requireText(start, "createCsrfMiddleware", "CSRF middleware installed");
 requireText(start, 'ctx.handlerType === "serverFn"', "CSRF applies to server functions");
+
+requireText(publisher, "$ExpectedProjectName = 'veltsapp'", "publisher targets the known LiveKit project");
+requireText(publisher, "$ExpectedProjectId = 'prj_2bxeLmViz7MPHOA5hTuRe6lJZ1tL'", "publisher targets ChatFacil Vercel project");
+requireText(publisher, "Publication must run from [main]", "publisher is main-only");
+requireText(publisher, "Local main must exactly match origin/main", "publisher requires exact remote main");
+requireText(publisher, "LIVEKIT_API_KEY' -Value $liveKit.ApiKey -Sensitive $true", "API key stored as sensitive");
+requireText(publisher, "LIVEKIT_API_SECRET' -Value $liveKit.ApiSecret -Sensitive $true", "API secret stored as sensitive");
+requireText(publisher, "WriteAllText($tempPath", "credentials use temporary stdin files");
+requireText(publisher, "Remove-Item -LiteralPath $tempPath", "temporary credential files are deleted");
+requireText(publisher, "@('deploy', '--prod', '--non-interactive')", "publisher deploys production non-interactively");
+forbidPattern(publisher, /Write-Host[^\n]*(ApiSecret|ApiKey)/i, "publisher must never print LiveKit credentials");
 
 console.log("Stella voice security invariants passed.");
