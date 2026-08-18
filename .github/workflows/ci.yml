@@ -49,6 +49,9 @@ jobs:
       - name: Test Meta webhook security
         run: node --experimental-strip-types --test supabase/functions/_shared/meta-webhook-auth.test.ts
 
+      - name: Test Stella voice security invariants
+        run: node scripts/check-stella-voice.mjs
+
       - name: Build
         run: npm run build:vite
 
