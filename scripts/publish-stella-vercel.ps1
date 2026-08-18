@@ -70,7 +70,13 @@ function Read-LiveKitProjectConfig([string]$Path) {
     }
 }
 
-function Invoke-Vercel([string[]]$Arguments, [bool]$AllowFailure = $false) {
+function Invoke-Vercel {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments,
+        [bool]$AllowFailure = $false
+    )
+
     & $script:VercelCommand @Arguments
     $code = $LASTEXITCODE
     if ($code -ne 0 -and -not $AllowFailure) {
@@ -79,12 +85,20 @@ function Invoke-Vercel([string[]]$Arguments, [bool]$AllowFailure = $false) {
     return $code
 }
 
-function Add-VercelEnvFromValue([string]$Name, [string]$Value, [bool]$Sensitive) {
+function Add-VercelEnvFromValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [Parameter(Mandatory = $true)]
+        [string]$Value,
+        [bool]$Sensitive = $false
+    )
+
     $tempPath = Join-Path ([System.IO.Path]::GetTempPath()) ("chatfacil-stella-" + [guid]::NewGuid().ToString('N') + '.txt')
     try {
         [System.IO.File]::WriteAllText($tempPath, $Value, (New-Object System.Text.UTF8Encoding($false)))
 
-        [void](Invoke-Vercel @('env', 'rm', $Name, 'production', '--yes') $true)
+        [void](Invoke-Vercel -Arguments @('env', 'rm', $Name, 'production', '--yes') -AllowFailure $true)
 
         $vercelPath = (Get-Command $script:VercelCommand -ErrorAction Stop).Source
         $sensitiveArg = if ($Sensitive) { ' --sensitive' } else { '' }
@@ -106,18 +120,18 @@ foreach ($command in @('git', 'vercel')) {
 }
 $script:VercelCommand = 'vercel'
 
-$repoRoot = (& git rev-parse --show-toplevel 2>$null).Trim()
+$repoRoot = (git rev-parse --show-toplevel 2>$null).Trim()
 if (-not $repoRoot) { throw 'Run this script inside the ChatFacil repository.' }
 Set-Location $repoRoot
 
-$branch = (& git branch --show-current).Trim()
+$branch = (git branch --show-current).Trim()
 if ($branch -ne 'main') { throw "Publication must run from [main], current branch is [$branch]." }
 if (git status --porcelain) { throw 'Working tree must be clean before production publication.' }
 
-& git fetch origin main
+git fetch origin main
 if ($LASTEXITCODE -ne 0) { throw 'git fetch origin main failed.' }
-$head = (& git rev-parse HEAD).Trim()
-$originMain = (& git rev-parse origin/main).Trim()
+$head = (git rev-parse HEAD).Trim()
+$originMain = (git rev-parse origin/main).Trim()
 if ($head -ne $originMain) { throw 'Local main must exactly match origin/main before publication.' }
 
 $liveKitConfigPath = Join-Path $env:USERPROFILE '.livekit\cli-config.yaml'
@@ -127,11 +141,11 @@ $env:VERCEL_ORG_ID = $ExpectedOrgId
 $env:VERCEL_PROJECT_ID = $ExpectedProjectId
 
 Write-Host 'Configuring Stella server-only LiveKit variables in Vercel production...'
-Add-VercelEnvFromValue 'LIVEKIT_URL' $liveKit.Url $false
-Add-VercelEnvFromValue 'LIVEKIT_API_KEY' $liveKit.ApiKey $true
-Add-VercelEnvFromValue 'LIVEKIT_API_SECRET' $liveKit.ApiSecret $true
+Add-VercelEnvFromValue -Name 'LIVEKIT_URL' -Value $liveKit.Url -Sensitive $false
+Add-VercelEnvFromValue -Name 'LIVEKIT_API_KEY' -Value $liveKit.ApiKey -Sensitive $true
+Add-VercelEnvFromValue -Name 'LIVEKIT_API_SECRET' -Value $liveKit.ApiSecret -Sensitive $true
 
 Write-Host 'Environment variables configured without printing credential values.'
 Write-Host 'Deploying ChatFacil main to Vercel production...'
-[void](Invoke-Vercel @('deploy', '--prod', '--non-interactive') $false)
+[void](Invoke-Vercel -Arguments @('deploy', '--prod', '--non-interactive'))
 Write-Host 'Stella production publication command completed.'
