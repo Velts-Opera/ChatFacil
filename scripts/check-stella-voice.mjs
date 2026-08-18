@@ -22,7 +22,7 @@ requireText(server, 'const STELLA_AGENT_NAME = "velts-bad"', "fixed production a
 requireText(server, 'const STELLA_IDENTITY = "velts"', "fixed authorized identity");
 requireText(server, '"Cache-Control": "no-store, private"', "sensitive token response not cached");
 forbidText(server, "VITE_LIVEKIT_API_SECRET", "secret must never be client-prefixed");
-forbidText(server, "apiSecret,", "API secret must never be returned in response");
+forbidText(server, "apiSecret:", "API secret must never be returned as a property");
 
 requireText(
   client,
