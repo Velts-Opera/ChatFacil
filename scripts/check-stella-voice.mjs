@@ -56,6 +56,9 @@ requireText(publisher, "$ExpectedProjectId = 'prj_2bxeLmViz7MPHOA5hTuRe6lJZ1tL'"
 requireText(publisher, "Publication must run from [main]", "publisher is main-only");
 requireText(publisher, "Local main must exactly match origin/main", "publisher requires exact remote main");
 requireText(publisher, "& lk app env -w", "publisher exports credentials using supported LiveKit CLI command");
+requireText(publisher, "$previousErrorActionPreference = $ErrorActionPreference", "publisher preserves PowerShell error policy around LiveKit");
+requireText(publisher, "$ErrorActionPreference = 'Continue'", "publisher tolerates LiveKit native stderr warnings on Windows");
+requireText(publisher, "$ErrorActionPreference = $previousErrorActionPreference", "publisher restores PowerShell error policy after LiveKit");
 requireText(publisher, "if ($url -ne $ExpectedLiveKitUrl)", "publisher rejects a different active LiveKit project");
 requireText(publisher, "LIVEKIT_API_KEY' -Value $liveKit.ApiKey -Sensitive $true", "API key stored as sensitive");
 requireText(publisher, "LIVEKIT_API_SECRET' -Value $liveKit.ApiSecret -Sensitive $true", "API secret stored as sensitive");
