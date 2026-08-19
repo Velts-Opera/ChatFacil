@@ -44,9 +44,18 @@ function Export-LiveKitCredentials {
 
         Push-Location $tempDir
         try {
-            # LiveKit's supported export path. Capture output so credentials are never echoed by this helper.
-            $null = & lk app env -w 2>&1
-            $code = $LASTEXITCODE
+            # Windows PowerShell converts native stderr output into NativeCommandError when
+            # $ErrorActionPreference is Stop. LiveKit emits a non-fatal permissions warning
+            # on Windows, so allow native stderr here and trust the process exit code below.
+            $previousErrorActionPreference = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = 'Continue'
+                $null = & lk app env -w 2>&1
+                $code = $LASTEXITCODE
+            }
+            finally {
+                $ErrorActionPreference = $previousErrorActionPreference
+            }
         }
         finally {
             Pop-Location
