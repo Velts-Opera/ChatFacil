@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AudioLines, Mic, PhoneOff, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { createStellaVoiceSession } from "@/lib/stella-voice.server";
+import { createStellaVoiceSession } from "@/lib/stella-voice.functions";
 
 const LIVEKIT_CLIENT_SRC =
   "https://cdn.jsdelivr.net/npm/livekit-client@2.21.0/dist/livekit-client.umd.min.js";
