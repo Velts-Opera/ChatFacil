@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-const server = readFileSync("src/lib/stella-voice.server.ts", "utf8");
+const server = readFileSync("src/lib/stella-voice.functions.ts", "utf8");
 const client = readFileSync("src/components/stella-voice-panel.tsx", "utf8");
 const start = readFileSync("src/start.ts", "utf8");
 const publisher = readFileSync("scripts/publish-stella-vercel.ps1", "utf8");
@@ -17,6 +17,7 @@ function forbidPattern(text, pattern, label) {
   if (pattern.test(text)) throw new Error(`Unsafe Stella invariant: ${label}`);
 }
 
+requireText(server, 'createServerFn({ method: "POST" })', "client-safe server function RPC wrapper");
 requireText(server, ".middleware([requireSupabaseAuth])", "authenticated server function");
 requireText(server, 'rpc("is_super_admin")', "server-side super-admin authorization");
 requireText(server, 'canPublishSources: ["microphone"]', "microphone-only publish grant");
@@ -25,6 +26,9 @@ requireText(server, "canUpdateOwnMetadata: false", "metadata mutation disabled")
 requireText(server, 'agentName: STELLA_AGENT_NAME', "explicit Stella agent dispatch");
 requireText(server, 'const STELLA_AGENT_NAME = "velts-bad"', "fixed production agent name");
 requireText(server, 'const STELLA_IDENTITY = "velts"', "fixed authorized identity");
+requireText(server, 'const LIVEKIT_PRODUCTION_URL = "wss://veltsapp-j8mqf7tp.livekit.cloud"', "fixed production LiveKit URL");
+requireText(server, "configured !== LIVEKIT_PRODUCTION_URL", "reject alternate LiveKit endpoint");
+requireText(server, 'jti: crypto.randomUUID()', "unique token identifier");
 requireText(server, '"Cache-Control": "no-store, private"', "sensitive token response not cached");
 requireText(server, "participantToken: string", "response contract contains only participant token");
 requireText(server, "serverUrl: string", "response contract contains LiveKit URL");
@@ -37,6 +41,8 @@ requireText(
   "livekit-client@2.21.0/dist/livekit-client.umd.min.js",
   "pinned official LiveKit browser client",
 );
+requireText(client, 'from "@/lib/stella-voice.functions"', "client imports only RPC wrapper");
+forbidText(client, "stella-voice.server", "client must never import a .server module");
 requireText(client, "setMicrophoneEnabled(true)", "microphone publication");
 forbidText(client, "setCameraEnabled", "camera publication forbidden");
 forbidText(client, "enableCameraAndMicrophone", "camera+microphone helper forbidden");
