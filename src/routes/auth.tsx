@@ -75,10 +75,10 @@ function AuthPage() {
           </Link>
           <div>
             <h1 className="font-display text-4xl font-extrabold leading-tight">
-              Transforme seu WhatsApp em uma máquina de atendimento e vendas.
+              Seu WhatsApp atendendo com IA, usando as informações da sua empresa.
             </h1>
             <p className="mt-4 text-primary-foreground/80">
-              Inbox, CRM e uma IA configurada com os dados da sua própria empresa.
+              Conecte seu WhatsApp Business pelo fluxo oficial da Meta e configure seu bot de atendimento.
             </p>
           </div>
           <p className="text-xs text-primary-foreground/60">© {new Date().getFullYear()} ChatFacil</p>
@@ -199,7 +199,7 @@ function SignupForm() {
       email: normalizeEmail(form.email),
       password: form.password,
       options: {
-        emailRedirectTo: getAuthRedirectTo("/onboarding-inicial"),
+        emailRedirectTo: getAuthRedirectTo("/pending-activation"),
         data: {
           company_name: form.company_name.trim(),
           segment: form.segment.trim(),
@@ -215,26 +215,29 @@ function SignupForm() {
     if (error) return toast.error(getSupabaseAuthMessage(error.message));
 
     if (data.session) {
-      toast.success("Conta criada! Vamos conectar seu WhatsApp.");
-      navigate({ to: "/onboarding-inicial" });
+      toast.success("Conta criada e enviada para ativação.");
+      navigate({ to: "/pending-activation" });
       return;
     }
 
-    toast.success("Conta criada! Verifique seu e-mail para ativar o acesso e continuar a conexão do WhatsApp.");
+    toast.success("Conta criada! Confirme seu e-mail. Depois da confirmação, sua conta ficará aguardando ativação.");
   }
 
   async function onGoogle() {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: getAuthRedirectTo("/onboarding-inicial") },
+      options: { redirectTo: getAuthRedirectTo("/pending-activation") },
     });
     if (error) toast.error(getSupabaseAuthMessage(error.message));
-    else if (!data.url) navigate({ to: "/onboarding-inicial" });
+    else if (!data.url) navigate({ to: "/pending-activation" });
   }
 
   return (
     <form onSubmit={onSubmit} className="mt-6 space-y-3">
       <h2 className="font-display text-2xl font-bold">Criar conta da empresa</h2>
+      <p className="text-sm text-muted-foreground">
+        O cadastro cria sua conta de acesso. O ambiente da empresa é liberado somente após ativação.
+      </p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <Label htmlFor="s-company">Nome da empresa</Label>
@@ -265,7 +268,7 @@ function SignupForm() {
           <Input id="s-hours" placeholder="Seg a Sex, 9h às 18h" value={form.business_hours} onChange={(e) => upd("business_hours", e.target.value)} />
         </div>
         <div className="sm:col-span-2">
-          <Label htmlFor="s-desc">Descrição dos serviços</Label>
+          <Label htmlFor="s-desc">Informações para o bot</Label>
           <Textarea id="s-desc" rows={3} value={form.services_description} onChange={(e) => upd("services_description", e.target.value)} />
         </div>
         <div className="sm:col-span-2">
