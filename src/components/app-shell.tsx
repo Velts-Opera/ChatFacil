@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { StellaVoicePanel } from "@/components/stella-voice-panel";
 import { cn } from "@/lib/utils";
 
 const nav = [
@@ -158,14 +157,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
           <span className="font-display text-sm font-bold">ChatFacil</span>
         </header>
-        <main className="flex-1 min-w-0">
-          {isSuperAdmin && pathname.startsWith("/admin") && (
-            <div className="px-6 pt-6 pb-0">
-              <StellaVoicePanel />
-            </div>
-          )}
-          {children}
-        </main>
+        <main className="flex-1 min-w-0">{children}</main>
       </div>
     </div>
   );
