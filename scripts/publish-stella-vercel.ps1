@@ -115,22 +115,25 @@ function Add-VercelEnvFromValue {
         [bool]$Sensitive = $false
     )
 
-    $tempPath = Join-Path ([System.IO.Path]::GetTempPath()) ("chatfacil-stella-" + [guid]::NewGuid().ToString('N') + '.txt')
+    # Vercel CLI officially accepts environment values on stdin. Piping avoids
+    # cmd.exe input-redirection quoting bugs on Windows and keeps secrets out of argv.
+    $arguments = @('env', 'add', $Name, 'production', '--force', '--yes')
+    if ($Sensitive) {
+        $arguments += '--sensitive'
+    }
+
+    $previousErrorActionPreference = $ErrorActionPreference
     try {
-        [System.IO.File]::WriteAllText($tempPath, $Value, (New-Object System.Text.UTF8Encoding($false)))
-
-        [void](Invoke-Vercel -Arguments @('env', 'rm', $Name, 'production', '--yes') -AllowFailure $true)
-
-        $vercelPath = (Get-Command $script:VercelCommand -ErrorAction Stop).Source
-        $sensitiveArg = if ($Sensitive) { ' --sensitive' } else { '' }
-        $commandLine = '"' + $vercelPath + '" env add ' + $Name + ' production' + $sensitiveArg + ' < "' + $tempPath + '"'
-        $process = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/d', '/s', '/c', $commandLine) -Wait -PassThru -NoNewWindow
-        if ($process.ExitCode -ne 0) {
-            throw "Failed to configure Vercel environment variable [$Name]."
-        }
+        $ErrorActionPreference = 'Continue'
+        $Value | & $script:VercelCommand @arguments
+        $code = $LASTEXITCODE
     }
     finally {
-        Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    if ($code -ne 0) {
+        throw "Failed to configure Vercel environment variable [$Name] (exit code $code)."
     }
 }
 
