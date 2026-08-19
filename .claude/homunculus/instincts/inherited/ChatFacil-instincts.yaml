@@ -1,0 +1,298 @@
+# Instincts generated from https://github.com/Velts-Opera/ChatFacil
+# Generated: 2026-07-22T03:03:54.395Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: ChatFacil-commit-conventional
+trigger: "when writing a commit message"
+confidence: 0.85
+domain: git
+source: repo-analysis
+source_repo: https://github.com/Velts-Opera/ChatFacil
+---
+
+# ChatFacil Commit Conventional
+
+## Action
+
+Use conventional commit format with prefixes: fix
+
+## Evidence
+
+- 1 commits analyzed
+- Detected conventional commit pattern
+- Examples: fix(whatsapp): harden Alibaba AI webhook
+
+---
+id: ChatFacil-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/Velts-Opera/ChatFacil
+---
+
+# ChatFacil Commit Length
+
+## Action
+
+Keep commit messages concise (~40 characters)
+
+## Evidence
+
+- Average commit message length: 40 chars
+- Based on 1 commits
+
+---
+id: ChatFacil-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/Velts-Opera/ChatFacil
+---
+
+# ChatFacil Naming Files
+
+## Action
+
+Use kebab-case naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: kebab-case
+
+---
+id: ChatFacil-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/Velts-Opera/ChatFacil
+---
+
+# ChatFacil Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: ChatFacil-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/Velts-Opera/ChatFacil
+---
+
+# ChatFacil Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: chatfacil-instinct-file-naming
+trigger: "When creating a new file"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: Velts-Opera/ChatFacil
+---
+
+# Chatfacil Instinct File Naming
+
+## Action
+
+Name the file using kebab-case
+
+## Evidence
+
+- Pattern in namingConventions.files
+
+---
+id: chatfacil-instinct-function-naming
+trigger: "When defining a new function"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: Velts-Opera/ChatFacil
+---
+
+# Chatfacil Instinct Function Naming
+
+## Action
+
+Name the function using camelCase
+
+## Evidence
+
+- Pattern in namingConventions.functions
+
+---
+id: chatfacil-instinct-class-naming
+trigger: "When creating a new class"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: Velts-Opera/ChatFacil
+---
+
+# Chatfacil Instinct Class Naming
+
+## Action
+
+Name the class using PascalCase
+
+## Evidence
+
+- Pattern in namingConventions.classes
+
+---
+id: chatfacil-instinct-constant-naming
+trigger: "When defining a constant"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: Velts-Opera/ChatFacil
+---
+
+# Chatfacil Instinct Constant Naming
+
+## Action
+
+Name the constant using SCREAMING_SNAKE_CASE
+
+## Evidence
+
+- Pattern in namingConventions.constants
+
+---
+id: chatfacil-instinct-import-style
+trigger: "When importing modules"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: Velts-Opera/ChatFacil
+---
+
+# Chatfacil Instinct Import Style
+
+## Action
+
+Use relative import paths
+
+## Evidence
+
+- Pattern in importStyle
+
+---
+id: chatfacil-instinct-export-style
+trigger: "When exporting code elements"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: Velts-Opera/ChatFacil
+---
+
+# Chatfacil Instinct Export Style
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- Pattern in exportStyle
+
+---
+id: chatfacil-instinct-commit-format
+trigger: "When writing a git commit message"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: Velts-Opera/ChatFacil
+---
+
+# Chatfacil Instinct Commit Format
+
+## Action
+
+Use the conventional commit format with a prefix (e.g., fix(scope): message)
+
+## Evidence
+
+- Pattern in commits.type
+- Example: fix(whatsapp): harden Alibaba AI webhook
+
+---
+id: chatfacil-instinct-commit-prefix
+trigger: "When fixing a bug and committing"
+confidence: 0.8
+domain: git
+source: repo-analysis
+source_repo: Velts-Opera/ChatFacil
+---
+
+# Chatfacil Instinct Commit Prefix
+
+## Action
+
+Prefix the commit message with 'fix'
+
+## Evidence
+
+- Pattern in commits.prefixes
+
+---
+id: chatfacil-instinct-error-handling
+trigger: "When handling errors in code"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: Velts-Opera/ChatFacil
+---
+
+# Chatfacil Instinct Error Handling
+
+## Action
+
+Use try-catch blocks for error handling
+
+## Evidence
+
+- Pattern in errorHandling.style
+
+---
+id: chatfacil-instinct-test-location
+trigger: "When adding new tests"
+confidence: 0.7
+domain: testing
+source: repo-analysis
+source_repo: Velts-Opera/ChatFacil
+---
+
+# Chatfacil Instinct Test Location
+
+## Action
+
+Place test files in mixed locations (not strictly separated from source files)
+
+## Evidence
+
+- Pattern in architecture.folderStructure.testLocation
+
