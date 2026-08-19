@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { Clock3, Loader2, LogOut, MessageSquareText, RefreshCw, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -40,21 +41,23 @@ function PendingActivationPage() {
   });
 
   const state = stateQuery.data;
+  const authRequired = stateQuery.error instanceof Error && stateQuery.error.message === "AUTH_REQUIRED";
+  const active = state?.status === "active" && Boolean(state.company_id) && state.company_is_active !== false;
 
-  if (state?.status === "active" && state.company_id && state.company_is_active !== false) {
-    navigate({ to: "/onboarding-inicial", replace: true });
-    return null;
-  }
-
-  if (stateQuery.error instanceof Error && stateQuery.error.message === "AUTH_REQUIRED") {
-    navigate({ to: "/auth", replace: true });
-    return null;
-  }
+  useEffect(() => {
+    if (active) {
+      navigate({ to: "/onboarding-inicial", replace: true });
+      return;
+    }
+    if (authRequired) navigate({ to: "/auth", replace: true });
+  }, [active, authRequired, navigate]);
 
   async function signOut() {
     await supabase.auth.signOut();
     navigate({ to: "/auth", replace: true });
   }
+
+  if (active || authRequired) return null;
 
   const suspended = state?.status === "suspended";
 
