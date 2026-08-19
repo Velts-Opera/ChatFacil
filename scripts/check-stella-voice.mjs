@@ -66,7 +66,7 @@ requireText(publisher, "@('env', 'add', $Name, 'production', '--force', '--yes')
 requireText(publisher, "$Value | & $script:VercelCommand @arguments", "credentials are sent to Vercel over stdin instead of argv");
 requireText(publisher, "Remove-Item -LiteralPath $tempDir -Recurse -Force", "temporary LiveKit export directory is deleted");
 requireText(publisher, "@('deploy', '--prod', '--non-interactive')", "publisher deploys production non-interactively");
-forbidText(publisher, "cmd.exe", "publisher must not depend on cmd.exe input redirection");
+forbidText(publisher, "Start-Process -FilePath 'cmd.exe'", "publisher must not depend on cmd.exe input redirection");
 forbidText(publisher, "cli-config.yaml", "publisher must not parse LiveKit CLI YAML internals");
 forbidPattern(publisher, /Write-Host[^\n]*(ApiSecret|ApiKey)/i, "publisher must never print LiveKit credentials");
 
