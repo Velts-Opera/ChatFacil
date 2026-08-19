@@ -56,16 +56,17 @@ requireText(publisher, "$ExpectedProjectId = 'prj_2bxeLmViz7MPHOA5hTuRe6lJZ1tL'"
 requireText(publisher, "Publication must run from [main]", "publisher is main-only");
 requireText(publisher, "Local main must exactly match origin/main", "publisher requires exact remote main");
 requireText(publisher, "& lk app env -w", "publisher exports credentials using supported LiveKit CLI command");
-requireText(publisher, "$previousErrorActionPreference = $ErrorActionPreference", "publisher preserves PowerShell error policy around LiveKit");
-requireText(publisher, "$ErrorActionPreference = 'Continue'", "publisher tolerates LiveKit native stderr warnings on Windows");
-requireText(publisher, "$ErrorActionPreference = $previousErrorActionPreference", "publisher restores PowerShell error policy after LiveKit");
+requireText(publisher, "$previousErrorActionPreference = $ErrorActionPreference", "publisher preserves PowerShell error policy around native CLIs");
+requireText(publisher, "$ErrorActionPreference = 'Continue'", "publisher tolerates native stderr warnings on Windows");
+requireText(publisher, "$ErrorActionPreference = $previousErrorActionPreference", "publisher restores PowerShell error policy after native CLIs");
 requireText(publisher, "if ($url -ne $ExpectedLiveKitUrl)", "publisher rejects a different active LiveKit project");
 requireText(publisher, "LIVEKIT_API_KEY' -Value $liveKit.ApiKey -Sensitive $true", "API key stored as sensitive");
 requireText(publisher, "LIVEKIT_API_SECRET' -Value $liveKit.ApiSecret -Sensitive $true", "API secret stored as sensitive");
-requireText(publisher, "WriteAllText($tempPath", "credentials use temporary stdin files");
-requireText(publisher, "Remove-Item -LiteralPath $tempPath", "temporary Vercel credential files are deleted");
+requireText(publisher, "@('env', 'add', $Name, 'production', '--force', '--yes')", "publisher overwrites Vercel env values without delete-then-add gap");
+requireText(publisher, "$Value | & $script:VercelCommand @arguments", "credentials are sent to Vercel over stdin instead of argv");
 requireText(publisher, "Remove-Item -LiteralPath $tempDir -Recurse -Force", "temporary LiveKit export directory is deleted");
 requireText(publisher, "@('deploy', '--prod', '--non-interactive')", "publisher deploys production non-interactively");
+forbidText(publisher, "cmd.exe", "publisher must not depend on cmd.exe input redirection");
 forbidText(publisher, "cli-config.yaml", "publisher must not parse LiveKit CLI YAML internals");
 forbidPattern(publisher, /Write-Host[^\n]*(ApiSecret|ApiKey)/i, "publisher must never print LiveKit credentials");
 
