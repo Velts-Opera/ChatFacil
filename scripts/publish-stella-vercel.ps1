@@ -4,69 +4,81 @@ $ErrorActionPreference = 'Stop'
 
 $ExpectedOrgId = 'team_iCr30NKpFZBaOWxynzDsuZie'
 $ExpectedProjectId = 'prj_2bxeLmViz7MPHOA5hTuRe6lJZ1tL'
-$ExpectedProjectName = 'veltsapp'
+$ExpectedLiveKitUrl = 'wss://veltsapp-j8mqf7tp.livekit.cloud'
 
-function Get-YamlScalar([string]$Line) {
-    $parts = $Line.Split(':', 2)
-    if ($parts.Count -ne 2) { return '' }
-    $value = $parts[1].Trim()
-    if (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'"))) {
-        if ($value.Length -ge 2) { $value = $value.Substring(1, $value.Length - 2) }
+function Get-DotEnvValues([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw 'LiveKit CLI did not create the expected temporary environment file.'
     }
-    return $value
+
+    $values = @{}
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        $trimmed = ([string]$line).Trim()
+        if (-not $trimmed -or $trimmed.StartsWith('#') -or -not $trimmed.Contains('=')) {
+            continue
+        }
+
+        $parts = $trimmed.Split('=', 2)
+        $name = $parts[0].Trim()
+        $value = $parts[1].Trim()
+        if (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'"))) {
+            if ($value.Length -ge 2) {
+                $value = $value.Substring(1, $value.Length - 2)
+            }
+        }
+        $values[$name] = $value
+    }
+
+    return $values
 }
 
-function Read-LiveKitProjectConfig([string]$Path) {
-    if (-not (Test-Path $Path)) {
-        throw "LiveKit CLI config not found at [$Path]."
-    }
+function Export-LiveKitCredentials {
+    $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("chatfacil-livekit-" + [guid]::NewGuid().ToString('N'))
+    $examplePath = Join-Path $tempDir '.env.example'
+    $envPath = Join-Path $tempDir '.env.local'
 
-    $lines = @(Get-Content -LiteralPath $Path)
-    $defaultProject = ''
-    foreach ($line in $lines) {
-        if ($line -match '^default_project\s*:') {
-            $defaultProject = Get-YamlScalar $line
-            break
+    New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+    try {
+        $example = "LIVEKIT_URL=`r`nLIVEKIT_API_KEY=`r`nLIVEKIT_API_SECRET=`r`n"
+        [System.IO.File]::WriteAllText($examplePath, $example, (New-Object System.Text.UTF8Encoding($false)))
+
+        Push-Location $tempDir
+        try {
+            # LiveKit's supported export path. Capture output so credentials are never echoed by this helper.
+            $null = & lk app env -w 2>&1
+            $code = $LASTEXITCODE
+        }
+        finally {
+            Pop-Location
+        }
+
+        if ($code -ne 0) {
+            throw "LiveKit CLI failed to export the active project environment (exit code $code)."
+        }
+
+        $values = Get-DotEnvValues $envPath
+        $url = ([string]$values['LIVEKIT_URL']).Trim().TrimEnd('/')
+        $apiKey = ([string]$values['LIVEKIT_API_KEY']).Trim()
+        $apiSecret = ([string]$values['LIVEKIT_API_SECRET']).Trim()
+
+        if ($url -ne $ExpectedLiveKitUrl) {
+            throw 'The active LiveKit CLI project does not match the Velts-Bad production endpoint.'
+        }
+        if (-not $apiKey) {
+            throw 'LiveKit CLI export did not contain LIVEKIT_API_KEY.'
+        }
+        if (-not $apiSecret) {
+            throw 'LiveKit CLI export did not contain LIVEKIT_API_SECRET.'
+        }
+
+        return @{
+            Url = $url
+            ApiKey = $apiKey
+            ApiSecret = $apiSecret
         }
     }
-
-    if (-not $defaultProject) {
-        throw 'LiveKit CLI default_project is missing.'
-    }
-    if ($defaultProject -ne $ExpectedProjectName) {
-        throw "LiveKit CLI default project is [$defaultProject], expected [$ExpectedProjectName]."
-    }
-
-    $projectStart = -1
-    for ($i = 0; $i -lt $lines.Count; $i++) {
-        if ($lines[$i] -match ('^\s{2}' + [regex]::Escape($defaultProject) + '\s*:\s*$')) {
-            $projectStart = $i
-            break
-        }
-    }
-    if ($projectStart -lt 0) {
-        throw "Project [$defaultProject] was not found in LiveKit CLI config."
-    }
-
-    $url = ''
-    $apiKey = ''
-    $apiSecret = ''
-    for ($i = $projectStart + 1; $i -lt $lines.Count; $i++) {
-        $line = [string]$lines[$i]
-        if ($line -match '^\s{0,2}\S' -and $line -notmatch '^\s{4}') { break }
-        if ($line -match '^\s{4}url\s*:') { $url = Get-YamlScalar $line; continue }
-        if ($line -match '^\s{4}api_key\s*:') { $apiKey = Get-YamlScalar $line; continue }
-        if ($line -match '^\s{4}api_secret\s*:') { $apiSecret = Get-YamlScalar $line; continue }
-    }
-
-    if ($url -notmatch '^wss://') { throw 'LiveKit URL is missing or invalid.' }
-    if (-not $apiKey) { throw 'LiveKit API key is missing.' }
-    if (-not $apiSecret) { throw 'LiveKit API secret is missing.' }
-
-    return @{
-        Url = $url
-        ApiKey = $apiKey
-        ApiSecret = $apiSecret
+    finally {
+        Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -113,7 +125,7 @@ function Add-VercelEnvFromValue {
     }
 }
 
-foreach ($command in @('git', 'vercel')) {
+foreach ($command in @('git', 'vercel', 'lk')) {
     if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
         throw "Required command [$command] was not found."
     }
@@ -134,8 +146,7 @@ $head = (git rev-parse HEAD).Trim()
 $originMain = (git rev-parse origin/main).Trim()
 if ($head -ne $originMain) { throw 'Local main must exactly match origin/main before publication.' }
 
-$liveKitConfigPath = Join-Path $env:USERPROFILE '.livekit\cli-config.yaml'
-$liveKit = Read-LiveKitProjectConfig $liveKitConfigPath
+$liveKit = Export-LiveKitCredentials
 
 $env:VERCEL_ORG_ID = $ExpectedOrgId
 $env:VERCEL_PROJECT_ID = $ExpectedProjectId

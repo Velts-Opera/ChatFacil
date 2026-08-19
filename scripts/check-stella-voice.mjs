@@ -51,15 +51,19 @@ forbidText(client, "participantToken}", "token must not be rendered in JSX");
 requireText(start, "createCsrfMiddleware", "CSRF middleware installed");
 requireText(start, 'ctx.handlerType === "serverFn"', "CSRF applies to server functions");
 
-requireText(publisher, "$ExpectedProjectName = 'veltsapp'", "publisher targets the known LiveKit project");
+requireText(publisher, "$ExpectedLiveKitUrl = 'wss://veltsapp-j8mqf7tp.livekit.cloud'", "publisher pins Velts-Bad LiveKit endpoint");
 requireText(publisher, "$ExpectedProjectId = 'prj_2bxeLmViz7MPHOA5hTuRe6lJZ1tL'", "publisher targets ChatFacil Vercel project");
 requireText(publisher, "Publication must run from [main]", "publisher is main-only");
 requireText(publisher, "Local main must exactly match origin/main", "publisher requires exact remote main");
+requireText(publisher, "& lk app env -w", "publisher exports credentials using supported LiveKit CLI command");
+requireText(publisher, "if ($url -ne $ExpectedLiveKitUrl)", "publisher rejects a different active LiveKit project");
 requireText(publisher, "LIVEKIT_API_KEY' -Value $liveKit.ApiKey -Sensitive $true", "API key stored as sensitive");
 requireText(publisher, "LIVEKIT_API_SECRET' -Value $liveKit.ApiSecret -Sensitive $true", "API secret stored as sensitive");
 requireText(publisher, "WriteAllText($tempPath", "credentials use temporary stdin files");
-requireText(publisher, "Remove-Item -LiteralPath $tempPath", "temporary credential files are deleted");
+requireText(publisher, "Remove-Item -LiteralPath $tempPath", "temporary Vercel credential files are deleted");
+requireText(publisher, "Remove-Item -LiteralPath $tempDir -Recurse -Force", "temporary LiveKit export directory is deleted");
 requireText(publisher, "@('deploy', '--prod', '--non-interactive')", "publisher deploys production non-interactively");
+forbidText(publisher, "cli-config.yaml", "publisher must not parse LiveKit CLI YAML internals");
 forbidPattern(publisher, /Write-Host[^\n]*(ApiSecret|ApiKey)/i, "publisher must never print LiveKit credentials");
 
 console.log("Stella voice security invariants passed.");
