@@ -24,9 +24,6 @@ verify_jwt = false
 [functions.whatsapp-embedded-signup]
 verify_jwt = false
 
-[functions.business-automation-worker]
-verify_jwt = false
-
 [functions.meta-business-agent]
 verify_jwt = true
 
