@@ -25,23 +25,18 @@ select set_config('test.company_b',(select company_id::text from public.profiles
 insert into public.contacts(id,company_id,name) values
 ('a0000000-0000-4000-8000-000000000001',current_setting('test.company_a')::uuid,'Contato A'),
 ('b0000000-0000-4000-8000-000000000001',current_setting('test.company_b')::uuid,'Contato B');
-
 insert into public.channels(id,company_id,name,type,provider) values
 ('a0000000-0000-4000-8000-000000000002',current_setting('test.company_a')::uuid,'Meta A','whatsapp','meta_cloud_api'),
 ('b0000000-0000-4000-8000-000000000002',current_setting('test.company_b')::uuid,'Meta B','whatsapp','meta_cloud_api');
-
 insert into public.conversations(id,company_id,contact_id,channel_id) values
 ('a0000000-0000-4000-8000-000000000003',current_setting('test.company_a')::uuid,'a0000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000002'),
 ('b0000000-0000-4000-8000-000000000003',current_setting('test.company_b')::uuid,'b0000000-0000-4000-8000-000000000001','b0000000-0000-4000-8000-000000000002');
-
 insert into public.messages(id,company_id,channel_id,contact_id,conversation_id,content,meta_message_id) values
 ('a0000000-0000-4000-8000-000000000004',current_setting('test.company_a')::uuid,'a0000000-0000-4000-8000-000000000002','a0000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000003','Mensagem A','wamid.test-a'),
 ('b0000000-0000-4000-8000-000000000004',current_setting('test.company_b')::uuid,'b0000000-0000-4000-8000-000000000002','b0000000-0000-4000-8000-000000000001','b0000000-0000-4000-8000-000000000003','Mensagem B','wamid.test-b');
-
 insert into public.ai_knowledge_items(id,company_id,title,content) values
 ('a0000000-0000-4000-8000-000000000005',current_setting('test.company_a')::uuid,'KB A','Conteúdo A'),
 ('b0000000-0000-4000-8000-000000000005',current_setting('test.company_b')::uuid,'KB B','Conteúdo B');
-
 insert into public.quick_replies(id,company_id,title,message) values
 ('a0000000-0000-4000-8000-000000000006',current_setting('test.company_a')::uuid,'QR A','Resposta A'),
 ('b0000000-0000-4000-8000-000000000006',current_setting('test.company_b')::uuid,'QR B','Resposta B');
@@ -49,9 +44,8 @@ insert into public.quick_replies(id,company_id,title,message) values
 set local role authenticated;
 set local request.jwt.claim.sub = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 set local request.jwt.claim.role = 'authenticated';
-
-select ok(public.business_can_access_company(current_setting('test.company_a')::uuid),'empresa A -> A é permitido');
-select ok(not public.business_can_access_company(current_setting('test.company_b')::uuid),'empresa A -> B é negado');
+select is(public.get_user_company_id(),current_setting('test.company_a')::uuid,'empresa A resolve o próprio tenant');
+select isnt(public.get_user_company_id(),current_setting('test.company_b')::uuid,'empresa A não resolve tenant B');
 select results_eq($$select count(*) from public.companies$$,array[1::bigint],'companies SELECT mostra só a própria empresa');
 
 select results_eq($$select count(*) from public.contacts where id in ('a0000000-0000-4000-8000-000000000001','b0000000-0000-4000-8000-000000000001')$$,array[1::bigint],'contacts SELECT isola A de B');
@@ -101,12 +95,12 @@ select results_eq(format('select count(*) from public.companies where id=%L::uui
 select results_eq($$select count(*) from public.contacts where id='b0000000-0000-4000-8000-000000000001'$$,array[0::bigint],'superadmin não vê contatos do cliente B');
 select results_eq($$select count(*) from public.conversations where id='b0000000-0000-4000-8000-000000000003'$$,array[0::bigint],'superadmin não vê conversas do cliente B');
 select results_eq($$select count(*) from public.messages where id='b0000000-0000-4000-8000-000000000004'$$,array[0::bigint],'superadmin não vê mensagens do cliente B');
-select ok(not public.business_can_access_company(current_setting('test.company_b')::uuid),'superadmin não recebe acesso operacional ao cliente B');
+select ok(public.get_user_company_id() is null,'superadmin sem tenant não recebe company_id operacional');
 reset role;
 
 set local role service_role;
 set local request.jwt.claim.role = 'service_role';
-select ok(public.business_can_access_company(current_setting('test.company_b')::uuid),'service_role mantém acesso backend ao tenant B');
+select results_eq($$select count(*) from public.messages where id='b0000000-0000-4000-8000-000000000004'$$,array[1::bigint],'service_role mantém acesso backend ao tenant B');
 reset role;
 
 select throws_matching(format('insert into public.channels(company_id,name,type,provider) values (%L::uuid,%L,%L,%L)',current_setting('test.company_a'),'Legacy QR','whatsapp','qr_code'),'channels_supported_whatsapp_provider_check','provider legado é bloqueado no banco');
