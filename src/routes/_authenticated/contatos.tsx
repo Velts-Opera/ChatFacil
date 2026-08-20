@@ -33,7 +33,7 @@ function ContactsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("contacts")
-        .select("id, name, phone, source, funnel_stage, potential_value, last_interaction_at")
+        .select("id, name, phone, source, last_interaction_at")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data ?? [];
@@ -95,7 +95,7 @@ function ContactsPage() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl font-bold">Contatos</h1>
-          <p className="text-sm text-muted-foreground">CRM da sua base.</p>
+          <p className="text-sm text-muted-foreground">Pessoas atendidas pelo WhatsApp desta empresa.</p>
         </div>
         <div className="flex gap-2">
           <Dialog open={tagOpen} onOpenChange={setTagOpen}>
@@ -148,22 +148,18 @@ function ContactsPage() {
               <th className="px-4 py-3">Nome</th>
               <th className="px-4 py-3">Telefone</th>
               <th className="px-4 py-3 hidden md:table-cell">Origem</th>
-              <th className="px-4 py-3 hidden md:table-cell">Etapa</th>
-              <th className="px-4 py-3 hidden lg:table-cell">Valor potencial</th>
               <th className="px-4 py-3 hidden lg:table-cell">Última interação</th>
             </tr>
           </thead>
           <tbody>
             {contacts.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">Nenhum contato ainda.</td></tr>
+              <tr><td colSpan={4} className="px-4 py-10 text-center text-muted-foreground">Nenhum contato ainda.</td></tr>
             )}
             {contacts.map((c: any) => (
               <tr key={c.id} className="border-t border-border hover:bg-muted/30">
                 <td className="px-4 py-3 font-medium">{c.name}</td>
                 <td className="px-4 py-3 text-muted-foreground">{c.phone}</td>
                 <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{c.source ?? "—"}</td>
-                <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{c.funnel_stage ?? "—"}</td>
-                <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">R$ {Number(c.potential_value ?? 0).toFixed(2)}</td>
                 <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">
                   {c.last_interaction_at ? new Date(c.last_interaction_at).toLocaleDateString("pt-BR") : "—"}
                 </td>
