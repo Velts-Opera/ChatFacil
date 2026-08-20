@@ -14,7 +14,6 @@ import {
   X,
   Radio,
   Bot,
-  CalendarDays,
   Building2,
   Rocket,
 } from "lucide-react";
@@ -27,7 +26,6 @@ const nav = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/inbox", label: "Inbox", icon: Inbox },
   { to: "/contatos", label: "Contatos", icon: Users },
-  { to: "/agenda", label: "Agenda", icon: CalendarDays },
   { to: "/agente-ia", label: "Agente IA", icon: Bot },
   { to: "/respostas-rapidas", label: "Respostas rápidas", icon: MessagesSquare },
   { to: "/canais", label: "Canais", icon: Radio },
