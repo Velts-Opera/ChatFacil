@@ -1,9 +1,8 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(53);
+select plan(56);
 
--- Core ChatFacil contract: tenant + official WhatsApp + AI bot.
 select has_table('public','companies','companies exists');
 select has_table('public','profiles','profiles exists');
 select has_table('public','user_roles','user roles exists');
@@ -41,7 +40,6 @@ select ok(relrowsecurity,'messages has RLS') from pg_class where oid='public.mes
 select ok(relrowsecurity,'ai agent settings has RLS') from pg_class where oid='public.ai_agent_settings'::regclass;
 select ok(relrowsecurity,'AI knowledge has RLS') from pg_class where oid='public.ai_knowledge_items'::regclass;
 
--- Explicitly reject the product surface removed in Phases 2/4.
 select hasnt_table('public','appointments','Agenda is absent');
 select hasnt_table('public','crm_sales','CRM sales is absent');
 select hasnt_table('public','law_firm_profiles','legal firm module is absent');
@@ -62,15 +60,11 @@ select ok(to_regprocedure('public.admin_activate_account(uuid,text,text)') is no
 select ok(to_regprocedure('public.admin_enter_company(uuid)') is null,'admin impersonation RPC is absent');
 select ok(to_regprocedure('public.admin_create_company(text,text,text,text,text,text)') is null,'orphan tenant creation RPC is absent');
 select results_eq($$select count(*) from cron.job where jobname='chatfacil-business-automation'$$,array[0::bigint],'business automation cron is absent');
-select results_eq(
-  $$select count(*) from pg_trigger t join pg_proc p on p.oid=t.tgfoid where t.tgrelid='public.messages'::regclass and not t.tgisinternal and p.proname like 'business_%'$$,
-  array[0::bigint],
-  'messages have no business automation triggers'
-);
-select ok(
-  exists(select 1 from pg_constraint where conrelid='public.channels'::regclass and conname='channels_supported_whatsapp_provider_check'),
-  'Meta-only WhatsApp provider constraint exists'
-);
+select results_eq($$select count(*) from pg_trigger t join pg_proc p on p.oid=t.tgfoid where t.tgrelid='public.messages'::regclass and not t.tgisinternal and p.proname like 'business_%'$$,array[0::bigint],'messages have no business automation triggers');
+select ok(exists(select 1 from pg_constraint where conrelid='public.channels'::regclass and conname='channels_supported_whatsapp_provider_check'),'Meta-only WhatsApp provider constraint exists');
+select ok(to_regprocedure('public.seed_business_defaults(uuid)') is null,'legacy business defaults seeder is absent');
+select ok(to_regprocedure('public.tg_seed_business_defaults()') is null,'legacy business seed trigger function is absent');
+select results_eq($$select count(*) from pg_trigger where tgrelid='public.companies'::regclass and not tgisinternal and tgname='trg_companies_seed_business_defaults'$$,array[0::bigint],'companies have no legacy business seed trigger');
 
 select * from finish();
 rollback;
