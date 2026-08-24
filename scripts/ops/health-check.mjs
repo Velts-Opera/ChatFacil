@@ -34,8 +34,15 @@ const jsonPost = {
   body: "{}",
 };
 
+const embeddedSignupWithoutAuth = {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ action: "create", connection_mode: "coexistence" }),
+};
+
 const results = await Promise.all([
   probe("web-app", appUrl, { method: "GET" }, (status) => status >= 200 && status < 400),
+  probe("auth-page", `${appUrl}/auth`, { method: "GET" }, (status) => status >= 200 && status < 400),
   probe(
     "meta-webhook-rejects-unsigned",
     `${functionsUrl}/whatsapp-webhook`,
@@ -43,9 +50,9 @@ const results = await Promise.all([
     (status) => status === 403,
   ),
   probe(
-    "worker-rejects-missing-token",
-    `${functionsUrl}/business-automation-worker`,
-    jsonPost,
+    "embedded-signup-requires-user",
+    `${functionsUrl}/whatsapp-embedded-signup`,
+    embeddedSignupWithoutAuth,
     (status) => status === 401,
   ),
   probe(
@@ -70,3 +77,10 @@ const failures = results.filter((result) => !result.ok);
 if (failures.length) {
   throw new Error(`Production health check failed: ${failures.map((item) => item.name).join(", ")}`);
 }
+
+console.log(
+  JSON.stringify({
+    checkedAt: new Date().toISOString(),
+    note: "These probes validate availability and security contracts only. They are not proof that Meta Embedded Signup completes for an external customer; a real external E2E remains a mandatory GO gate.",
+  }),
+);
