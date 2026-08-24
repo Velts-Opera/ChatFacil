@@ -23,8 +23,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Regenerate npm lockfile
+      - name: Synchronize lockfile
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Apply non-breaking production audit fixes
+        run: npm audit fix --package-lock-only --omit=dev --ignore-scripts --no-fund
       - name: Commit repaired lockfile
         shell: bash
         run: |
@@ -35,5 +37,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package-lock.json
-          git commit -m "build: synchronize npm lockfile"
+          git commit -m "build: patch vulnerable production dependencies"
           git push origin HEAD:codex/p0-real-production-audit-20260824
