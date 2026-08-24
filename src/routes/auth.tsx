@@ -38,7 +38,7 @@ function getSupabaseAuthMessage(message: string) {
   }
 
   if (lowerMessage.includes("redirect") || lowerMessage.includes("not allowed")) {
-    return "URL de autenticação não autorizada no Supabase. Cadastre o domínio atual nas URLs permitidas.";
+    return "URL de autenticação não autorizada. Tente novamente em alguns instantes.";
   }
 
   return message || "Não foi possível autenticar agora.";
@@ -126,15 +126,6 @@ function LoginForm() {
     navigate({ to: "/dashboard" });
   }
 
-  async function onGoogle() {
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: getAuthRedirectTo("/dashboard") },
-    });
-    if (error) toast.error(getSupabaseAuthMessage(error.message));
-    else if (!data.url) navigate({ to: "/dashboard" });
-  }
-
   async function onForgot() {
     if (!email) return toast.error("Informe seu e-mail acima primeiro");
     const { error } = await supabase.auth.resetPasswordForEmail(normalizeEmail(email), {
@@ -162,13 +153,6 @@ function LoginForm() {
       <button type="button" onClick={onForgot} className="block w-full text-center text-xs text-muted-foreground hover:text-foreground">
         Esqueci minha senha
       </button>
-      <div className="relative py-2">
-        <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border" /></div>
-        <div className="relative flex justify-center"><span className="bg-background px-2 text-xs text-muted-foreground">ou</span></div>
-      </div>
-      <Button type="button" variant="outline" className="w-full" onClick={onGoogle}>
-        Continuar com Google
-      </Button>
     </form>
   );
 }
@@ -199,7 +183,7 @@ function SignupForm() {
       email: normalizeEmail(form.email),
       password: form.password,
       options: {
-        emailRedirectTo: getAuthRedirectTo("/pending-activation"),
+        emailRedirectTo: getAuthRedirectTo("/dashboard"),
         data: {
           company_name: form.company_name.trim(),
           segment: form.segment.trim(),
@@ -215,28 +199,19 @@ function SignupForm() {
     if (error) return toast.error(getSupabaseAuthMessage(error.message));
 
     if (data.session) {
-      toast.success("Conta criada e enviada para ativação.");
-      navigate({ to: "/pending-activation" });
+      toast.success("Conta criada com sucesso.");
+      navigate({ to: "/dashboard" });
       return;
     }
 
-    toast.success("Conta criada! Confirme seu e-mail. Depois da confirmação, sua conta ficará aguardando ativação.");
-  }
-
-  async function onGoogle() {
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: getAuthRedirectTo("/pending-activation") },
-    });
-    if (error) toast.error(getSupabaseAuthMessage(error.message));
-    else if (!data.url) navigate({ to: "/pending-activation" });
+    toast.success("Conta criada! Confirme seu e-mail para entrar no ChatFacil.");
   }
 
   return (
     <form onSubmit={onSubmit} className="mt-6 space-y-3">
       <h2 className="font-display text-2xl font-bold">Criar conta da empresa</h2>
       <p className="text-sm text-muted-foreground">
-        O cadastro cria sua conta de acesso. O ambiente da empresa é liberado somente após ativação.
+        Crie sua conta e comece a configurar o atendimento da sua empresa.
       </p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
@@ -279,13 +254,6 @@ function SignupForm() {
       <Button type="submit" className="w-full" disabled={loading}>
         {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
         Criar conta
-      </Button>
-      <div className="relative py-2">
-        <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border" /></div>
-        <div className="relative flex justify-center"><span className="bg-background px-2 text-xs text-muted-foreground">ou</span></div>
-      </div>
-      <Button type="button" variant="outline" className="w-full" onClick={onGoogle}>
-        Continuar com Google
       </Button>
     </form>
   );
