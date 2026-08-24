@@ -1,9 +1,9 @@
 name: Repair audit lockfile
 
 on:
-  push:
+  pull_request:
     branches:
-      - codex/p0-real-production-audit-20260824
+      - main
     paths:
       - package.json
       - package-lock.json
@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   repair:
-    if: github.actor != 'github-actions[bot]'
+    if: github.head_ref == 'codex/p0-real-production-audit-20260824' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
