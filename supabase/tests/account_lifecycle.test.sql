@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(26);
+select plan(27);
 
 insert into auth.users (id, email, raw_user_meta_data)
 values
