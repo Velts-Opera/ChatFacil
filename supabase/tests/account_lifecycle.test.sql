@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(26);
+select plan(27);
 
 insert into auth.users (id, email, raw_user_meta_data)
 values
@@ -13,31 +13,30 @@ insert into public.platform_admins (user_id)
 values ('f4000000-0000-4000-8000-000000000001')
 on conflict (user_id) do nothing;
 
-select ok(exists(select 1 from public.account_access where user_id='f4000000-0000-4000-8000-000000000002' and status='pending' and archived_at is null),'signup cria conta pending visível');
-select ok(not exists(select 1 from public.profiles where id='f4000000-0000-4000-8000-000000000002'),'signup não cria profile antes da ativação');
-select ok(not exists(select 1 from public.companies where owner_id='f4000000-0000-4000-8000-000000000002'),'signup não cria empresa antes da ativação');
+select ok(exists(select 1 from public.account_access where user_id='f4000000-0000-4000-8000-000000000002' and status='active' and company_id is not null and archived_at is null),'signup válido ativa account_access automaticamente');
+select ok(exists(select 1 from public.profiles where id='f4000000-0000-4000-8000-000000000002' and company_id is not null),'signup válido cria profile isolado automaticamente');
+select ok(exists(select 1 from public.companies where owner_id='f4000000-0000-4000-8000-000000000002'),'signup válido cria empresa própria automaticamente');
 
 set local role authenticated;
 set local request.jwt.claim.sub = 'f4000000-0000-4000-8000-000000000002';
 set local request.jwt.claim.role = 'authenticated';
-select results_eq($$select status::text from public.get_account_activation_state()$$,array['pending'::text],'usuário novo enxerga estado pending');
-select results_eq($$select count(*) from public.companies$$,array[0::bigint],'usuário pending não enxerga empresas');
+select results_eq($$select status::text from public.get_account_activation_state()$$,array['active'::text],'primeiro acesso confirma usuário já provisionado como active');
+select results_eq($$select count(*) from public.companies$$,array[1::bigint],'usuário auto-provisionado enxerga somente a própria empresa');
 reset role;
 
 set local role authenticated;
-set local request.jwt.claim.sub = 'f4000000-0000-4000-8000-000000000001';
+set local request.jwt.claim.sub = 'f4000000-0000-4000-8000-000000000003';
 set local request.jwt.claim.role = 'authenticated';
-select public.admin_activate_account('f4000000-0000-4000-8000-000000000002', null, 'start');
-select public.admin_activate_account('f4000000-0000-4000-8000-000000000003', null, 'start');
+select results_eq($$select status::text from public.get_account_activation_state()$$,array['active'::text],'segundo usuário também está provisionado sem intervenção administrativa');
 reset role;
 
 select set_config('test.phase4_company_a',(select company_id::text from public.profiles where id='f4000000-0000-4000-8000-000000000002'),true);
 select set_config('test.phase4_company_b',(select company_id::text from public.profiles where id='f4000000-0000-4000-8000-000000000003'),true);
 
-select ok(exists(select 1 from public.profiles where id='f4000000-0000-4000-8000-000000000002' and company_id=current_setting('test.phase4_company_a')::uuid),'ativação associa profile ao tenant');
-select ok(exists(select 1 from public.user_roles where user_id='f4000000-0000-4000-8000-000000000002' and company_id=current_setting('test.phase4_company_a')::uuid and role='owner'),'ativação cria role owner');
-select ok(exists(select 1 from public.ai_agent_settings where company_id=current_setting('test.phase4_company_a')::uuid),'ativação cria agente IA');
-select results_eq(format('select count(*) from public.channels where company_id=%L::uuid',current_setting('test.phase4_company_a')),array[0::bigint],'ativação não cria canal antes do Embedded Signup');
+select ok(exists(select 1 from public.profiles where id='f4000000-0000-4000-8000-000000000002' and company_id=current_setting('test.phase4_company_a')::uuid),'auto-provisionamento associa profile ao tenant');
+select ok(exists(select 1 from public.user_roles where user_id='f4000000-0000-4000-8000-000000000002' and company_id=current_setting('test.phase4_company_a')::uuid and role='owner'),'auto-provisionamento cria role owner');
+select ok(exists(select 1 from public.ai_agent_settings where company_id=current_setting('test.phase4_company_a')::uuid),'auto-provisionamento cria agente IA');
+select results_eq(format('select count(*) from public.channels where company_id=%L::uuid',current_setting('test.phase4_company_a')),array[0::bigint],'auto-provisionamento não cria canal antes do Embedded Signup');
 
 insert into public.contacts(id,company_id,name) values ('f4000000-0000-4000-8000-000000000010',current_setting('test.phase4_company_b')::uuid,'Contato B');
 insert into public.conversations(id,company_id,contact_id,status) values ('f4000000-0000-4000-8000-000000000011',current_setting('test.phase4_company_b')::uuid,'f4000000-0000-4000-8000-000000000010','aberta');
