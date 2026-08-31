@@ -45,7 +45,7 @@ insert into public.messages(id,company_id,conversation_id,contact_id,content) va
 set local role authenticated;
 set local request.jwt.claim.sub = 'f4000000-0000-4000-8000-000000000002';
 set local request.jwt.claim.role = 'authenticated';
-select results_eq($$select status::text from public.get_account_activation_state()$$,array['active'::text'],'usuário autorizado enxerga estado active');
+select results_eq($$select status::text from public.get_account_activation_state()$$,array['active'::text],'usuário autorizado enxerga estado active');
 select results_eq($$select count(*) from public.companies$$,array[1::bigint],'cliente ativo enxerga apenas a própria empresa');
 select results_eq($$select count(*) from public.conversations where id='f4000000-0000-4000-8000-000000000011'$$,array[0::bigint],'cliente A não enxerga conversa do cliente B');
 select results_eq($$select count(*) from public.messages where id='f4000000-0000-4000-8000-000000000012'$$,array[0::bigint],'cliente A não enxerga mensagem do cliente B');
@@ -71,7 +71,7 @@ update public.companies set is_active=false where id=current_setting('test.phase
 set local role authenticated;
 set local request.jwt.claim.sub = 'f4000000-0000-4000-8000-000000000002';
 set local request.jwt.claim.role = 'authenticated';
-select results_eq($$select status::text from public.get_account_activation_state()$$,array['suspended'::text'],'empresa desativada muda conta para suspended');
+select results_eq($$select status::text from public.get_account_activation_state()$$,array['suspended'::text],'empresa desativada muda conta para suspended');
 select ok(public.get_user_company_id() is null,'suspensão revoga company_id operacional');
 select results_eq($$select count(*) from public.companies$$,array[0::bigint],'cliente suspenso não enxerga tenant');
 reset role;
